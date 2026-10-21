@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="英会話の吹き出し">
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="#096d78"/>
+  <path d="M299 682 248 826 441 724Z" fill="#fffdf8"/>
+  <rect x="192" y="188" width="640" height="536" rx="156" fill="#fffdf8"/>
+  <path d="m512 282 177 389h-91l-36-87H462l-36 87h-91l177-389Zm0 149-42 99h84l-42-99Z" fill="#096d78" fill-rule="evenodd"/>
+</svg>

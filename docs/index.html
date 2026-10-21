@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="日本語を見て声に出して英語にする練習アプリ speak25 を、自分の Cloudflare に置く手順を図で説明します。">
+<title>speak25 の始め方</title>
+<style>
+:root {
+  --bg: #f6f8f8; --card: #ffffff; --text: #1d2a2c; --muted: #5a6b6e; --line: #d5dfe0;
+  --accent: #096d78; --accent-text: #ffffff; --soft: #e3f1f2; --warn: #fff4d6; --warn-line: #e5c56a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11181a; --card: #1a2427; --text: #e6eeee; --muted: #9db0b3; --line: #2c3b3f;
+    --accent: #4fc3d0; --accent-text: #08262a; --soft: #1b3236; --warn: #3a3217; --warn-line: #7a6a2c;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.75 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.7rem; line-height: 1.35; margin: 8px 0 8px; }
+h2 { font-size: 1.25rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); }
+h3 { font-size: 1.05rem; margin: 0 0 6px; }
+p { margin: 0 0 12px; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+code { background: var(--soft); padding: 1px 6px; border-radius: 4px; font-size: .9em; overflow-wrap: anywhere; }
+.lead { color: var(--muted); }
+.btn { display: inline-block; background: var(--accent); color: var(--accent-text); text-decoration: none; font-weight: 700; padding: 12px 20px; border-radius: 8px; margin: 4px 8px 4px 0; }
+.btn.sub { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+.flow { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.flow .node { background: var(--card); border: 1.5px solid var(--line); border-radius: 8px; padding: 8px 10px; text-align: center; }
+.flow .node.hl { background: var(--soft); border-color: var(--accent); }
+.flow .node strong { display: block; word-break: keep-all; }
+.flow > .node { min-width: 9em; }
+.flow .node span { display: block; color: var(--muted); word-break: keep-all; overflow-wrap: anywhere; }
+.flow .zone { border: 2px dashed var(--accent); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.flow .ext { border: 2px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.flow .zone-title { color: var(--muted); text-align: center; }
+.flow .arr { flex: none; width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 12px solid var(--accent); }
+.flow .zone .arr { align-self: center; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 12px solid var(--accent); border-bottom: 0; }
+@media (max-width: 720px) {
+  .flow { flex-direction: column; align-items: stretch; }
+  .flow > .node { min-width: 0; }
+  .flow > .arr { align-self: center; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 12px solid var(--accent); border-bottom: 0; }
+}
+.steps { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+.steps > li { counter-increment: step; position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 6px 60px; margin: 0 0 12px; }
+.steps > li::before { content: counter(step); position: absolute; left: 14px; top: 14px; width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: var(--accent-text); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.steps ul, .steps ol { margin: 0 0 10px; padding-left: 1.2em; }
+.steps li li { margin: 2px 0; }
+.note { background: var(--warn); border: 1px solid var(--warn-line); border-radius: 8px; padding: 10px 12px; margin: 8px 0 12px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; background: var(--card); }
+th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--soft); white-space: nowrap; }
+td.num { white-space: nowrap; }
+footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
+@media (max-width: 480px) {
+  h1 { font-size: 1.45rem; }
+  .steps > li { padding-left: 54px; }
+  th { white-space: normal; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>speak25 の始め方</h1>
+  <p class="lead">毎日25分、日本語を見て声に出して英語にする練習アプリです。自分の Cloudflare に置き、自分の Gemini と Claude のキーで動かします。ここでは、置くまでの手順を順番に説明します。</p>
+  <p>
+    <a class="btn" href="https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/speak25">Deploy to Cloudflare</a>
+    <a class="btn sub" href="https://github.com/universe-sync/speak25">リポジトリを見る</a>
+  </p>
+
+  <h2>しくみ</h2>
+  <div class="flow" role="img" aria-label="あなたのブラウザから、あなたの Cloudflare の Worker と Durable Object を通り、外部のサービスの Gemini と Claude に届く流れ">
+    <div class="node"><strong>あなたのブラウザ</strong><span>マイクで答える</span></div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="zone">
+      <div class="zone-title">あなたの Cloudflare（キーと記録はここだけ）</div>
+      <div class="node hl"><strong>Worker</strong><span>合言葉の門・頻度の制限</span></div>
+      <div class="arr" aria-hidden="true"></div>
+      <div class="node hl"><strong>Durable Object</strong><span>記録・1日の上限・外部サービスの呼び出し</span></div>
+    </div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="ext">
+      <div class="zone-title">外部のサービス</div>
+      <div class="node"><strong>Gemini（Google）</strong><span>聞き取り・読み上げ</span></div>
+      <div class="node"><strong>Claude（Anthropic）</strong><span>採点</span></div>
+    </div>
+  </div>
+  <p style="margin-top:12px">作者のサーバーは通りません。合言葉・キー・練習の記録は、あなたの Cloudflare の中だけにあります。外への通信は Gemini と Anthropic だけです。</p>
+
+  <h2>始める前に：使いすぎを防ぐ</h2>
+  <div class="note">キーを作る<strong>前に</strong>、お金の上限を掛けます。Gemini と Claude は、使った分だけそれぞれあなたに請求されます。</div>
+
+  <h2>手順</h2>
+  <p>必要なもの：GitHub の無料アカウント、Cloudflare の無料アカウント、Google アカウント、Claude Console のアカウント。</p>
+  <ol class="steps">
+    <li>
+      <h3>Gemini の API キーを作る</h3>
+      <ol>
+        <li><a href="https://aistudio.google.com/">Google AI Studio</a> で、プロジェクトを作ります（このアプリ専用がおすすめです）。</li>
+        <li>プロジェクトに<strong>お支払い情報（請求先）</strong>をつなぎ、前払いにします。無料枠は入力が Google の製品改善に使われることがあるので、おすすめしません。前払いの残高は請求先アカウントの単位で、同じ請求先のほかのプロジェクトと共有されます。</li>
+        <li>「利用額」の画面で、<strong>1か月の費用の上限</strong>（「費用の上限を設定」）を入れます。試験運用の機能で、画面に出ないことがあります。</li>
+        <li>「API キー」の画面でキーを作り、コピーしておきます。</li>
+      </ol>
+    </li>
+    <li>
+      <h3>Claude の API キーを作る</h3>
+      <ol>
+        <li><a href="https://platform.claude.com/">Claude Console</a> で<strong>新しいワークスペース</strong>を作ります（「ワークスペースを作成」）。</li>
+        <li>そのワークスペースに<strong>支出上限</strong>（月）を入れます。既定のワークスペースには上限を掛けられないので、必ず新しく作ります。</li>
+        <li>そのワークスペースを選んだ状態で「API キーを作成」を押し、キーをコピーしておきます。</li>
+      </ol>
+    </li>
+    <li>
+      <h3>合言葉を決める</h3>
+      <ul>
+        <li><strong>16字以上256字以内</strong>。前後の空白・改行は無視されます。</li>
+        <li>パスワード管理アプリで乱数を作って保存するのがおすすめです。</li>
+        <li>ユーザー名はありません。名前を足しても、合言葉を長くするのと変わらないためです。</li>
+      </ul>
+    </li>
+    <li>
+      <h3>Deploy ボタンを押す</h3>
+      <ul>
+        <li>上の「Deploy to Cloudflare」を押し、GitHub と Cloudflare にログインします。あなたの GitHub にこのリポジトリの複製ができます。</li>
+        <li>画面に出る3つの値を入れます：<code>GATE_PASSWORD</code>（合言葉）、<code>GEMINI_API_KEY</code>、<code>ANTHROPIC_API_KEY</code>。</li>
+        <li>そのまま進めると、Cloudflare が作って公開します。</li>
+      </ul>
+    </li>
+    <li>
+      <h3>URL を開く</h3>
+      <ul>
+        <li>できた URL <code>https://&lt;Worker の名前&gt;.&lt;あなたのサブドメイン&gt;.workers.dev</code> を開き、合言葉で入ります。</li>
+        <li>マイクの許可を出します。</li>
+        <li>スマホでは「ホーム画面に追加」できます（iPhone は共有メニュー、Android の Chrome は ⋮ のメニュー）。</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h2>お金の目安</h2>
+  <div class="tablewrap">
+    <table>
+      <tr><th>内容</th><th>目安</th></tr>
+      <tr><td>1問</td><td class="num">約0.06円</td></tr>
+      <tr><td>10問</td><td class="num">約0.6円</td></tr>
+      <tr><td>50問</td><td class="num">約3円</td></tr>
+      <tr><td>聞き取り（30秒いっぱい／60秒）</td><td class="num">約0.23円／約0.47円</td></tr>
+      <tr><td>Claude の採点（1問）</td><td class="num">約0.03円</td></tr>
+      <tr><td>読み上げ（1回）</td><td class="num">約0.1円</td></tr>
+    </table>
+  </div>
+  <p style="margin-top:12px">声が長いほど増えます。読み上げは、1日の上限の100回で約10円です。単価は2027年1月から2倍の予定です。1ドル＝156円、2026年10月の料金表での計算です。アプリの中にも上限があります。</p>
+  <div class="tablewrap">
+    <table>
+      <tr><th>アプリ内の上限</th><th>既定</th></tr>
+      <tr><td>1日の採点の回数</td><td class="num">300回</td></tr>
+      <tr><td>1日の利用料の見積もり</td><td class="num">約50円</td></tr>
+      <tr><td>1日の読み上げの回数</td><td class="num">100回</td></tr>
+      <tr><td>回答の頻度（IP ごと）</td><td class="num">1分に40回</td></tr>
+      <tr><td>読み上げの頻度（IP ごと）</td><td class="num">1分に30回</td></tr>
+    </table>
+  </div>
+  <p style="margin-top:12px">1日は日本時間の0時で区切ります。同時にたくさん送られると、上限を超えることがあります。超える額は、ふつうの長さの回答なら最大で約3円、長い録音が続くと最大で約20円です（どちらも1分ぶんの目安。1分ごとの区切りをまたぐと、その約2倍になることもあります）。値は <code>wrangler.jsonc</code> の <code>vars</code> で変えられます。</p>
+
+  <h2>困ったとき</h2>
+  <div class="tablewrap">
+    <table>
+      <tr><th>表示・状態</th><th>原因と対処</th></tr>
+      <tr><td>「門を閉じています」（503）</td><td>合言葉が未設定、16字未満、または256字超です。登録し直します。</td></tr>
+      <tr><td>「しばらく入れません」（429）</td><td>合言葉の間違いが続きました。約10分待ちます。全体で10分に30回間違えると、正しい合言葉でも10分入れません。</td></tr>
+      <tr><td>「Claude の月の上限（…）に達しました」</td><td>Claude Console で自分が決めた支出上限、または Anthropic 側の利用段階の上限に達しました。上限を上げるか、戻るまで待ちます。</td></tr>
+      <tr><td>「Claude の残高が足りません。」</td><td>Claude Console で残高を確かめます。</td></tr>
+      <tr><td>「Claude APIキーまたはモデルの利用権限を確認してください。」</td><td>Claude のキーが違うか、無効です。入れ直します。</td></tr>
+      <tr><td>「Gemini APIキーまたはモデルの利用権限を確認してください。」</td><td>Gemini のキーが違うか、無効です。入れ直します。</td></tr>
+      <tr><td>「Gemini の前払い残高がなくなりました。」</td><td>Google AI Studio で残高を追加します。</td></tr>
+      <tr><td>「Gemini の請求の設定を Google AI Studio で確かめてください。」</td><td>請求先がつながっているか確かめます。</td></tr>
+      <tr><td>「Gemini の利用の割り当て（…）に達しました。」</td><td>月の費用の上限などに達しました。時間をおくか、Google AI Studio で上限を確かめます。</td></tr>
+      <tr><td>「今日の…上限に達しました」</td><td>アプリ内の1日の上限です。日本時間の0時を過ぎると戻ります。</td></tr>
+    </table>
+  </div>
+  <p style="margin-top:12px">Claude の月の上限・残高切れ・キーの誤りと、Gemini の残高切れ・請求の設定・キーの誤りを受けると、そのサービスは10分間呼ばなくなります。直したあとも、最大10分は待つことがあります。Gemini の「利用の割り当て」は10分止めず、そのときの呼び出しが断られるだけです（料金はかかりません）。</p>
+  <p><strong>合言葉やキーを変える：</strong>Cloudflare のダッシュボード → Workers &amp; Pages → このアプリ → Settings → Variables and Secrets。合言葉を変えると、全員の cookie が無効になって入り直しになります。</p>
+  <p><strong>更新を取り込む：</strong>いちばん簡単なのは、もう一度 Deploy ボタンで置き直すことです（練習の記録は引き継がれません）。Git が使える人向けの方法など、詳しくは <a href="https://github.com/universe-sync/speak25#更新を取り込むとき">README</a> を見てください。まだ実際に試していない手順があります。</p>
+
+  <h2>安全のしくみ</h2>
+  <ul>
+    <li>入口は合言葉だけです。失敗は10分のあいだに、IP ごとに5回、全体で30回までです。</li>
+    <li>入ったあとは cookie（180日・HttpOnly・署名つき）で見分けます。ログアウトは、その端末の cookie を消すだけです。cookie が漏れたら、合言葉を変えてください。</li>
+    <li>cookie が漏れた場合、合言葉が弱いとそこから割り出されるおそれがあります。合言葉は16字以上の乱数にしてください。</li>
+    <li>検索に出ない設定にしています。</li>
+  </ul>
+
+  <footer>
+    <p>MIT ライセンスです。問題文の100問はこのアプリのために作ったもので、書籍とは関係ありません。Gemini・Claude・Cloudflare は、それぞれの会社の商標です。</p>
+    <p><a href="https://github.com/universe-sync/speak25">https://github.com/universe-sync/speak25</a></p>
+  </footer>
+</main>
+</body>
+</html>

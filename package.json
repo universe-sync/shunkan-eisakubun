@@ -1,0 +1,29 @@
+{
+  "name": "speak25",
+  "version": "0.1.0",
+  "private": true,
+  "description": "毎日25分、日本語を見て声に出して英語にする練習アプリ（Cloudflare Workers）。Gemini が聞き取り、Claude が採点します。",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "scripts": {
+    "dev": "vite build && concurrently -k -n web,worker -c green,magenta \"vite build --watch\" \"wrangler dev\"",
+    "deploy": "vite build && wrangler deploy",
+    "build": "npm run typecheck && vite build && wrangler deploy --dry-run --outdir dist/worker",
+    "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"tests/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.node.json",
+    "bench:audio": "node --disable-warning=ExperimentalWarning --import tsx scripts/bench-audio.ts"
+  },
+  "cloudflare": {
+    "bindings": {
+      "GATE_PASSWORD": { "description": "このアプリに入るための**合言葉**です。**16字以上256字以内**で、他で使っていない長いものにしてください（パスワード管理アプリで乱数を作って保存するのがおすすめ）。前後の空白・改行は無視されます。" },
+      "GEMINI_API_KEY": { "description": "Gemini の API キー（聞き取りと読み上げに使います）。[Google AI Studio](https://aistudio.google.com/) で、**請求先をつなぎ、1か月の費用の上限を掛けてから**キーを作ってください。" },
+      "ANTHROPIC_API_KEY": { "description": "Claude の API キー（採点に使います）。[Claude Console](https://platform.claude.com/) で**新しいワークスペースを作って支出上限（月）を入れてから**、そのワークスペースでキーを作ってください。" }
+    }
+  },
+  "dependencies": { "@anthropic-ai/sdk": "0.135.0", "hono": "4.13.13", "react": "19.2.0", "react-dom": "19.2.0" },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260820.1", "@types/node": "24.19.2", "@types/react": "19.2.7", "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.1.2", "concurrently": "10.0.6", "tsx": "4.23.15", "typescript": "5.9.3", "vite": "8.3.4", "wrangler": "4.124.0"
+  }
+}

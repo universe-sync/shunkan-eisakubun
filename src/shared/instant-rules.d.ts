@@ -1,0 +1,15 @@
+export type QuestionSeconds = number | "none";
+export const PASS_SCORE: 80;
+export const NO_LIMIT: "none";
+export const QUESTION_SECONDS_MIN: 10;
+export const QUESTION_SECONDS_MAX: 30;
+export const QUESTION_SECONDS_DEFAULT: 10;
+export const QUESTION_SECONDS_PRESETS: readonly number[];
+export const NO_LIMIT_CAP_SECONDS: 60;
+export const QUESTION_COUNT_OPTIONS: readonly number[];
+export const QUESTION_COUNT_DEFAULT: 10;
+export function parseQuestionSeconds(value: unknown): QuestionSeconds | undefined;
+export function parseQuestionCount(value: unknown): number | undefined;
+export function questionDurationMs(value: QuestionSeconds): number | null;
+export function stepQuestionSeconds(value: QuestionSeconds, delta: number): QuestionSeconds;
+export function questionSecondsLabel(value: QuestionSeconds): string;

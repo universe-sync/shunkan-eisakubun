@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2023", "DOM"],
+    "noImplicitAny": false,
+    "strictNullChecks": false
+  },
+  "include": ["tests", "scripts", "vite.config.ts"]
+}

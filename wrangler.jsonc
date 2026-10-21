@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // speak25（仮の名前）。Workers（無料プラン）＋ Durable Object（SQLite）1個 ＋ 静的ファイル（Vite の画面）
+  "name": "speak25",
+  "main": "src/server/worker.ts",
+  // wrangler 4.124.0 の workerd（1.20260815.1）が扱える最新の日付。wrangler を上げるときに一緒に見直す
+  "compatibility_date": "2026-08-15",
+  // nodejs_compat は Anthropic SDK のため。2つ目は process.env に secret を入れないため（受け付けられなければ外す）
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_do_not_populate_process_env"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "send_metrics": false,
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    // すべての要求をまず Worker（src/server/app.ts）に通す。門の外は src/server/gate/policy.ts の gateExempt だけ
+    "run_worker_first": true,
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+  "durable_objects": { "bindings": [ { "name": "PRACTICE", "class_name": "PracticeDO" } ] },
+  // DO のクラスの移行（SQL のマイグレーションとは別）。v1 は一度出したら書き換えない
+  "migrations": [ { "tag": "v1", "new_sqlite_classes": ["PracticeDO"] } ],
+  "dev": { "port": 8820, "inspector_port": 9820 },
+  // 1日の上限・頻度制限。値は文字列で、数字だけを受ける（範囲を外れたら既定に戻る）。秘密（合言葉・キー）は vars に書かず、Secret に登録する
+  "vars": {
+    "DAILY_ANSWER_LIMIT": "300",
+    "DAILY_YEN_LIMIT": "50",
+    "DAILY_SPEECH_LIMIT": "100",
+    "RATE_ANSWER_PER_MINUTE": "40",
+    "RATE_SPEECH_PER_MINUTE": "30"
+  },
+  "observability": { "enabled": true }
+}
