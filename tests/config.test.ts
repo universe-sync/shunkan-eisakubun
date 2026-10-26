@@ -11,8 +11,8 @@ forbidNetwork();
 const read = (name: string) => readFileSync(join(ROOT, name), "utf8");
 
 // wrangler.jsonc の注意書きは「行の頭の // 」だけ（行の途中にコメントを書かない）
-function wrangler(): any {
-  const text = read("wrangler.jsonc").split("\n").filter((line) => !line.trimStart().startsWith("//")).join("\n");
+function wrangler(file = "wrangler.jsonc"): any {
+  const text = read(file).split("\n").filter((line) => !line.trimStart().startsWith("//")).join("\n");
   return JSON.parse(text);
 }
 
@@ -50,7 +50,9 @@ test("package.json：版がすべて固定（^・~・latest なし）で、deplo
   }
   assert.equal(p.scripts.deploy, "vite build && wrangler deploy");
   const deployCommands = Object.entries<string>(p.scripts).filter(([, command]) => /wrangler deploy(?!\s+--dry-run)/.test(command)).map(([name]) => name);
-  assert.deepEqual(deployCommands, ["deploy"], "deploy 以外に、dry-run でない wrangler deploy がある");
+  assert.deepEqual(deployCommands, ["deploy", "deploy:trial"], "deploy・deploy:trial 以外に、dry-run でない wrangler deploy がある");
+  assert.equal(p.scripts["deploy:trial"], "vite build && wrangler deploy --config wrangler.trial.jsonc");
+  assert.match(p.scripts["dev:trial"], /wrangler dev --config wrangler\.trial\.jsonc/);
   assert.equal(p.engines.node, ">=22.12");
   assert.equal(p.name, "speak25");
   assert.equal(p.private, true);
@@ -78,4 +80,28 @@ test("index.html の title が APP_NAME と同じで、noindex とアイコン�
   assert.match(html, /<meta name="apple-mobile-web-app-title" content="speak25"\/>/);
   for (const icon of ["/icon.svg", "/icon-32.png", "/apple-touch-icon.png"]) assert.ok(html.includes(`href="${icon}"`), icon);
   assert.ok(html.includes('src="/src/client/main.tsx"'));
+});
+
+test("wrangler.trial.jsonc：name・dev・vars だけが wrangler.jsonc と違う。vars は決まった9項目で、秘密の名前が無い", () => {
+  const solo = wrangler(); const trial = wrangler("wrangler.trial.jsonc");
+  const { name: n1, dev: d1, vars: v1, ...restSolo } = solo; const { name: n2, dev: d2, vars: v2, ...restTrial } = trial;
+  void n1; void d1; void v1; void n2; void d2; void v2;
+  assert.deepEqual(restTrial, restSolo);
+  assert.equal(trial.name, "speak25-trial");
+  assert.deepEqual(trial.dev, { port: 8821, inspector_port: 9821 });
+  assert.deepEqual(Object.keys(trial.vars).sort(), ["DAILY_ANSWER_LIMIT", "DAILY_SPEECH_LIMIT", "DAILY_YEN_LIMIT", "RATE_ANSWER_PER_MINUTE", "RATE_SPEECH_PER_MINUTE", "TRIAL_ENDS_ON", "TRIAL_MODE", "TRIAL_QUESTIONS_PER_DAY", "TRIAL_SPEECH_PER_DAY"]);
+  assert.equal(trial.vars.TRIAL_MODE, "1");
+  assert.equal(trial.vars.TRIAL_SPEECH_PER_DAY, "10");
+  assert.equal(trial.vars.TRIAL_QUESTIONS_PER_DAY, "100");
+  assert.deepEqual([trial.vars.DAILY_ANSWER_LIMIT, trial.vars.DAILY_YEN_LIMIT, trial.vars.DAILY_SPEECH_LIMIT], ["1000", "150", "80"]);
+  assert.match(trial.vars.TRIAL_ENDS_ON, /^\d{4}-\d{2}-\d{2}$/);
+  for (const [name, value] of Object.entries<string>(trial.vars)) {
+    if (name !== "TRIAL_ENDS_ON") assert.match(value, /^\d{1,6}$/, name);
+    assert.ok(!/(KEY|SECRET|PASSWORD|TOKEN)/i.test(name), name);
+  }
+  assert.equal(wrangler().name, "speak25"); // 自分用は今までどおり
+});
+
+test(".dev.vars.example：TRIAL_ADMIN_TOKEN はコメント（入力欄にしない）", () => {
+  assert.match(read(".dev.vars.example"), /^# TRIAL_ADMIN_TOKEN=$/m);
 });

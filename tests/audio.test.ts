@@ -53,7 +53,7 @@ test("PCM 16bit 以外は unsupported_encoding", () => {
   assert.throws(() => parseWav(buildWav({ bitsPerSample: 8, data: Buffer.alloc(16000) })), wavError("unsupported_encoding"));
 });
 
-test("inspectSpeechWav は 16kHz・モノラル・65秒以内だけ通す（1問は最長60秒＋余裕5秒）", () => {
+test("inspectSpeechWav は 16kHz・モノラル・65秒以内だけ通す（1区間の録音は最長60秒＋余裕5秒）", () => {
   assert.throws(() => inspectSpeechWav(buildWav({ channels: 2, data: Buffer.alloc(64000) })), wavError("unsupported_format"));
   assert.throws(() => inspectSpeechWav(buildWav({ sampleRate: 44100, data: Buffer.alloc(88200) })), wavError("unsupported_format"));
   assert.ok(inspectSpeechWav(toWav(silence(60))));

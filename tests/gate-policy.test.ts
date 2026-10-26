@@ -40,18 +40,18 @@ test("clientKey：ヘッダーの値・無いとき local・65 字は local", ()
   assert.equal(clientKey(new Request("http://x/", { headers: { "CF-Connecting-IP": "a".repeat(64) } })), "a".repeat(64));
 });
 
-test("isConfigured：16字（コードポイント）の境目。前後の空白を除いて数える。COOKIE_SECRET は見ない", () => {
-  assert.equal(MIN_PASSWORD_CHARS, 16);
-  assert.equal(isConfigured({ GATE_PASSWORD: "x".repeat(16) }), true);
-  assert.equal(isConfigured({ GATE_PASSWORD: "x".repeat(15) }), false);
-  assert.equal(isConfigured({ GATE_PASSWORD: ` ${"x".repeat(15)} ` }), false); // 前後の空白を除くと15字
-  assert.equal(isConfigured({ GATE_PASSWORD: ` ${"x".repeat(16)}\n` }), true);
+test("isConfigured：10字（コードポイント）の境目。前後の空白を除いて数える。COOKIE_SECRET は見ない", () => {
+  assert.equal(MIN_PASSWORD_CHARS, 10);
+  assert.equal(isConfigured({ GATE_PASSWORD: "x".repeat(10) }), true);
+  assert.equal(isConfigured({ GATE_PASSWORD: "x".repeat(9) }), false);
+  assert.equal(isConfigured({ GATE_PASSWORD: ` ${"x".repeat(9)} ` }), false); // 前後の空白を除くと9字
+  assert.equal(isConfigured({ GATE_PASSWORD: ` ${"x".repeat(10)}\n` }), true);
   assert.equal(isConfigured({ GATE_PASSWORD: "   " }), false);
   assert.equal(isConfigured({ GATE_PASSWORD: "" }), false);
   assert.equal(isConfigured({}), false);
-  assert.equal(isConfigured({ GATE_PASSWORD: "あ".repeat(16) }), true);
-  assert.equal(isConfigured({ GATE_PASSWORD: "😀".repeat(16) }), true);  // コードポイントで数える（UTF-16 では32）
-  assert.equal(isConfigured({ GATE_PASSWORD: "😀".repeat(15) }), false);
+  assert.equal(isConfigured({ GATE_PASSWORD: "あ".repeat(10) }), true);
+  assert.equal(isConfigured({ GATE_PASSWORD: "😀".repeat(10) }), true);  // コードポイントで数える（UTF-16 では20）
+  assert.equal(isConfigured({ GATE_PASSWORD: "😀".repeat(9) }), false);
 });
 
 test("isConfigured：256字（UTF-16）を超えるとログインできないので門も閉じる", () => {

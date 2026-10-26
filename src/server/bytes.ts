@@ -12,3 +12,18 @@ export function asciiAt(bytes: Uint8Array, from: number, to: number): string {
   for (let i = from; i < to && i < bytes.length; i += 1) text += String.fromCharCode(bytes[i] as number);
   return text;
 }
+
+/** バイト列 → base64url（= なし） */
+export function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i] as number);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+/** base64url → バイト列。形が正しくない・正規の書き方でない（戻して作り直した文字が元と違う）ときは null */
+export function base64UrlToBytes(text: string): Uint8Array | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(text) || text.length % 4 === 1) return null;
+  const b64 = text.replace(/-/g, "+").replace(/_/g, "/");
+  let bytes: Uint8Array;
+  try { bytes = base64ToBytes(b64 + "=".repeat((4 - (b64.length % 4)) % 4)); } catch { return null; }
+  return bytesToBase64Url(bytes) === text ? bytes : null;
+}

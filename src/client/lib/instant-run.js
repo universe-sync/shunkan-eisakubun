@@ -1,16 +1,15 @@
 // 瞬間英作文の自動進行の、画面の段階の遷移・残り時間・答え合わせの組み立て。
 // 画面（Vite・tsc）と Node の試験（server/test/instant-run.test.js）の両方から読むので、DOM には触れない純粋な関数だけ。
-import { NO_LIMIT_CAP_SECONDS, QUESTION_SECONDS_DEFAULT } from "../../shared/instant-rules.js";
+import { QUESTION_SECONDS_DEFAULT } from "../../shared/instant-rules.js";
 
 export const QUESTION_SECONDS = QUESTION_SECONDS_DEFAULT;
 export const QUESTION_MS = QUESTION_SECONDS * 1000;
-export const NO_LIMIT_CAP_MS = NO_LIMIT_CAP_SECONDS * 1000;
 export const FINISH_WAIT_HINT_MS = 20_000;
 
 // 残り時間は経過時刻で計算する（setInterval の回数は数えない）。now は performance.now() の ms
-// durationMs が null なら「制限なし」：自動では進まないが、安全のため NO_LIMIT_CAP_MS（60秒）で進む。経過は一時停止の時間を除く
-export function startCountdown(now, durationMs = QUESTION_MS) { return { durationMs, startedAt: now, pausedAt: null, pausedMs: 0 }; } // null はそのまま通る
-export function limitMs(c) { return c.durationMs ?? NO_LIMIT_CAP_MS; }
+// 経過は一時停止の時間を除く
+export function startCountdown(now, durationMs = QUESTION_MS) { return { durationMs, startedAt: now, pausedAt: null, pausedMs: 0 }; }
+export function limitMs(c) { return c.durationMs; }
 export function elapsedMs(c, now) { const at = c.pausedAt ?? now; return Math.max(0, at - c.startedAt - c.pausedMs); }
 export function pauseCountdown(c, now) { return c.pausedAt === null ? { ...c, pausedAt: now } : c; }
 export function resumeCountdown(c, now) { return c.pausedAt === null ? c : { ...c, pausedAt: null, pausedMs: c.pausedMs + Math.max(0, now - c.pausedAt) }; }

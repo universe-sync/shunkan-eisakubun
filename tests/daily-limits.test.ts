@@ -161,3 +161,31 @@ test("reserveDaily：円が先に断る。7日より前の行は消える。メ�
   assert.match(dailyLimitMessage("answers", cfg), /^今日の採点の上限（2回）に達しました。/);
   db.close();
 });
+
+test("UserGate：円→全体→人の順に見て、人が断ったら全体を足さない。通ったら全体を足してから commit。渡さなければ今と同じ", () => {
+  const db = migratedDb(T0);
+  const cfg = guardConfig({ DAILY_ANSWER_LIMIT: "2", DAILY_YEN_LIMIT: "10" });
+  const log: string[] = [];
+  const gate = (userLimit: "trial_answers" | null) => ({ check: (day: string) => { log.push(`check ${day}`); return userLimit; }, commit: (day: string) => { log.push(`commit ${day}`); } });
+  const count = () => Number(db.all("SELECT COALESCE(SUM(count), 0) AS n FROM daily_counters WHERE name = 'answer'")[0]?.n);
+  // 円がいっぱい：人の check まで進まない
+  assert.deepEqual(reserveDaily(db, cfg, "answer", T0, 10, gate(null)), { ok: false, limit: "yen" });
+  assert.deepEqual(log, []);
+  // 人が断る：全体は足さず、commit もしない
+  assert.deepEqual(reserveDaily(db, cfg, "answer", T0, 0, gate("trial_answers")), { ok: false, user: "trial_answers" });
+  assert.equal(count(), 0);
+  assert.deepEqual(log, ["check 2026-10-21"]);
+  // 通る：全体を足してから commit
+  log.length = 0;
+  assert.deepEqual(reserveDaily(db, cfg, "answer", T0, 0, gate(null)), { ok: true });
+  assert.equal(count(), 1);
+  assert.deepEqual(log, ["check 2026-10-21", "commit 2026-10-21"]);
+  // 全体がいっぱい：人の check まで進まない
+  assert.deepEqual(reserveDaily(db, cfg, "answer", T0, 0), { ok: true });
+  log.length = 0;
+  assert.deepEqual(reserveDaily(db, cfg, "answer", T0, 0, gate(null)), { ok: false, limit: "answers" });
+  assert.deepEqual(log, []);
+  // user を渡さなければ今と同じ形（user の項目が無い）
+  const plain = reserveDaily(migratedDb(T0), cfg, "answer", T0, 0);
+  assert.deepEqual(plain, { ok: true });
+});

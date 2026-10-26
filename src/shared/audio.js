@@ -1,8 +1,8 @@
 // 瞬間英作文の録音（WAV）を調べる純粋な関数。入出力も保存もしない。画面（ブラウザ）とサーバー（DO）の両方が読む。
 // 声の有無はモデルではなく音量で判定する（モデルは無音や雑音からでも英文を作ってしまうため）。
-import { NO_LIMIT_CAP_SECONDS } from "./instant-rules.js";
+import { ANSWER_MAX_SECONDS } from "./instant-rules.js";
 
-export const SPEECH_WAV_FORMAT = Object.freeze({ sampleRate: 16000, channels: 1, bitsPerSample: 16, maxDurationSec: NO_LIMIT_CAP_SECONDS + 5 }); // 1問の最長（制限なしの上限60秒）＋余裕5秒
+export const SPEECH_WAV_FORMAT = Object.freeze({ sampleRate: 16000, channels: 1, bitsPerSample: 16, maxDurationSec: ANSWER_MAX_SECONDS + 5 }); // 1区間の録音の最長60秒＋余裕5秒
 export const SPEECH_DETECTION = Object.freeze({
   frameMs: 30,               // 区間の長さ
   absoluteMinDbfs: -45,      // 区間の RMS の絶対しきい値
@@ -112,7 +112,7 @@ export function detectSpeech(samples, sampleRate, options = {}) {
 export function inspectSpeechWav(input) {
   const wav = parseWav(input);
   if (wav.sampleRate !== SPEECH_WAV_FORMAT.sampleRate || wav.channels !== SPEECH_WAV_FORMAT.channels) fail("unsupported_format", WRONG_FORMAT);
-  if (wav.durationSec > SPEECH_WAV_FORMAT.maxDurationSec) fail("too_long", `録音が長すぎます。1問の録音は${NO_LIMIT_CAP_SECONDS}秒までです。`);
+  if (wav.durationSec > SPEECH_WAV_FORMAT.maxDurationSec) fail("too_long", `録音が長すぎます。1問の録音は${ANSWER_MAX_SECONDS}秒までです。`);
   return { sampleRate: wav.sampleRate, channels: wav.channels, durationSec: wav.durationSec, detection: detectSpeech(wav.samples, wav.sampleRate) };
 }
 

@@ -31,16 +31,22 @@ export function dailyState(db: Db, cfg: GuardConfig, now: number, todayJpy: numb
   };
 }
 
-/** 円が上限以上ならだめ、回数が上限以上ならだめ。どちらでもなければ数を＋1する。7日より前の行はここで消す */
-export interface DailyReserve { ok: boolean; limit?: DailyLimit }  // 判別つきの共用体にしないのは、テスト用の tsconfig（strictNullChecks なし）でも読めるようにするため
-export function reserveDaily(db: Db, cfg: GuardConfig, kind: DailyKind, now: number, todayJpy: number): DailyReserve {
+/** 円が上限以上ならだめ、全体の回数が上限以上ならだめ、人ごとの上限（user）に達していてもだめ。どれでもなければ数を＋1する。7日より前の行はここで消す */
+export type UserLimit = "trial_answers" | "trial_speech";
+/** お試しモードの人ごとの上限。check が上限を返したら全体は数えず断る。commit は全体を足した後に呼ぶ（読み上げの人ごとの数など） */
+export interface UserGate { check(day: string): UserLimit | null; commit?(day: string): void }
+export interface DailyReserve { ok: boolean; limit?: DailyLimit; user?: UserLimit }  // 判別つきの共用体にしないのは、テスト用の tsconfig（strictNullChecks なし）でも読めるようにするため
+export function reserveDaily(db: Db, cfg: GuardConfig, kind: DailyKind, now: number, todayJpy: number, user?: UserGate): DailyReserve {
   const day = jstDate(now);
   return db.transaction(() => {
     db.run("DELETE FROM daily_counters WHERE day < ?", jstDate(now - 7 * 86_400_000));
     if (todayJpy >= cfg.dailyYen) return { ok: false, limit: "yen" };
     const limit = kind === "answer" ? cfg.dailyAnswers : cfg.dailySpeech;
     if (counter(db, day, kind) >= limit) return { ok: false, limit: kind === "answer" ? "answers" : "speech" };
+    const userLimit = user?.check(day) ?? null;
+    if (userLimit) return { ok: false, user: userLimit }; // 全体はまだ足さない
     db.run("INSERT INTO daily_counters (day, name, count) VALUES (?, ?, 1) ON CONFLICT (day, name) DO UPDATE SET count = count + 1", day, kind);
+    user?.commit?.(day);
     return { ok: true };
   });
 }

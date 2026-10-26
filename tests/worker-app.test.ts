@@ -1,5 +1,5 @@
 // Worker の Hono（src/server/app.ts）の試験。ASSETS と practice は偽、API の処理は本物（node:sqlite の上）。
-// このアプリの決まり（cookie 名 app_gate・X-App・JSON の形・COOKIE_SECRET は任意・16字以上の合言葉）を確かめる
+// このアプリの決まり（cookie 名 app_gate・X-App・JSON の形・COOKIE_SECRET は任意・10字以上の合言葉）を確かめる
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ANSWER_BODY_LIMIT, createWorkerApp, DEFAULT_BODY_LIMIT, type WorkerEnv } from "../src/server/app";
@@ -39,7 +39,7 @@ test("/api/* は practice（DO）に渡り、no-store が付く。応答は書�
   const c = await s.cookie();
   const res = await s.req("/api/health", { headers: { Cookie: c } });
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, app: "speak25", schemaVersion: 2 });
+  assert.deepEqual(await res.json(), { ok: true, app: "speak25", schemaVersion: 3 });
   assert.equal(res.headers.get("Cache-Control"), "no-store");
   assert.deepEqual(s.practice.fetched, ["GET /api/health"]);
   assert.deepEqual(s.assets.requests, []);
@@ -248,15 +248,15 @@ test("POST /logout は X-App が要り、Max-Age=0 の cookie を返す（cookie
   assert.match(gateCookie(res) ?? "", /Max-Age=0/);
 });
 
-test("合言葉が16字未満・空・無しのとき：POST /login 503、/api 503、更新系 503、GET / は 302 /login、GET /login は 200", async () => {
-  for (const over of [{ GATE_PASSWORD: "" }, { GATE_PASSWORD: "x".repeat(15) }, { GATE_PASSWORD: " " + "x".repeat(15) + " " }, { GATE_PASSWORD: undefined }]) {
+test("合言葉が10字未満・空・無しのとき：POST /login 503、/api 503、更新系 503、GET / は 302 /login、GET /login は 200", async () => {
+  for (const over of [{ GATE_PASSWORD: "" }, { GATE_PASSWORD: "x".repeat(9) }, { GATE_PASSWORD: " " + "x".repeat(9) + " " }, { GATE_PASSWORD: undefined }]) {
     const s = setup(over);
     const login = await s.login("x");
     assert.equal(login.status, 503);
     const body = await login.json();
     assert.equal(body.reason, "not_configured");
     assert.match(body.error, /GATE_PASSWORD/);
-    assert.match(body.error, /16字/);
+    assert.match(body.error, /10字/);
     assert.equal((await s.req("/api/health")).status, 503);
     assert.equal((await s.req("/api/instant/reset", { method: "POST", headers: XJ, body: "{}" })).status, 503);
     const root = await s.req("/");
@@ -348,7 +348,7 @@ test("ヘッダーを変更できない ASSETS の応答（Response.redirect）�
 test("practice.fetch が例外を投げると 500 で、本文に例外の文字が入らない", async () => {
   const s = setup();
   const app = createWorkerApp<WorkerEnv>({
-    practice: () => ({ fetch: async () => { throw new Error("秘密のパス /secret"); }, loginAttempt: async () => ({ result: "ok" }) }),
+    practice: () => ({ fetch: async () => { throw new Error("秘密のパス /secret"); }, loginAttempt: async () => ({ result: "ok" }), trialRegister: async () => ({ ok: false, reason: "trial_off" }), trialParticipants: async () => ({ ok: false }) }),
     now: () => NOW,
   });
   const original = console.error;

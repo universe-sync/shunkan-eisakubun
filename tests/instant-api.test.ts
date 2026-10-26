@@ -332,15 +332,15 @@ test("設定の API：既定・保存・不正は400で前の値のまま・リ�
   assert.equal(saved.status, 200);
   assert.deepEqual(saved.body, { questionSeconds: 15, questionCount: 20 });
   assert.deepEqual((await getJson("/api/instant/settings")).body, { questionSeconds: 15, questionCount: 20 });
-  assert.equal((await putJson("/api/instant/settings", { questionSeconds: "none", questionCount: 50 })).status, 200);
-  for (const bad of [{ questionSeconds: 9, questionCount: 10 }, { questionSeconds: 31, questionCount: 10 }, { questionSeconds: "20", questionCount: 10 }, { questionSeconds: null, questionCount: 10 }, { questionSeconds: 15, questionCount: 15 }, { questionSeconds: 15 }, {}]) {
+  assert.equal((await putJson("/api/instant/settings", { questionSeconds: 25, questionCount: 50 })).status, 200);
+  for (const bad of [{ questionSeconds: "none", questionCount: 10 }, { questionSeconds: 9, questionCount: 10 }, { questionSeconds: 31, questionCount: 10 }, { questionSeconds: "20", questionCount: 10 }, { questionSeconds: null, questionCount: 10 }, { questionSeconds: 15, questionCount: 15 }, { questionSeconds: 15 }, {}]) {
     const result = await putJson("/api/instant/settings", bad);
     assert.equal(result.status, 400, JSON.stringify(bad));
     assert.match(result.body.error, /10〜30秒/);
   }
-  assert.deepEqual((await getJson("/api/instant/settings")).body, { questionSeconds: "none", questionCount: 50 });
+  assert.deepEqual((await getJson("/api/instant/settings")).body, { questionSeconds: 25, questionCount: 50 });
   await postJson("/api/instant/reset", {});
-  assert.deepEqual((await getJson("/api/instant/settings")).body, { questionSeconds: "none", questionCount: 50 });
+  assert.deepEqual((await getJson("/api/instant/settings")).body, { questionSeconds: 25, questionCount: 50 });
 });
 
 test("start：問題数と1問の時間。不正は400で出題を作らない。何も渡さなければ10問", async () => {
@@ -380,7 +380,7 @@ test("意味は伝わっても77点なら不合格（連続合格は0）で、�
   assert.equal(finished.body.items.find((item) => item.attempt)?.attempt.meaningEquivalent, true);
 });
 
-test("60秒の WAV（制限なしの上限）は受け付け、声が無ければ Gemini も Claude も呼ばずに回答なし", async () => {
+test("60秒の WAV（1区間の録音の最長）は受け付け、声が無ければ Gemini も Claude も呼ばずに回答なし", async () => {
   const session = await freshSession();
   const geminiBefore = ai.geminiCalls.length; const claudeBefore = ai.claudeCalls.length;
   const result = await send(session, session.pendingQuestionIds[0], toBase64(toWav(silence(60))), { segmentEnd: "timeout" });
@@ -415,7 +415,7 @@ test("health：アプリ名と DB の版を返す。知らない道筋は404の 
   const a = makeApi();
   const health = await a.getJson("/api/health");
   assert.equal(health.status, 200);
-  assert.deepEqual(health.body, { ok: true, app: "speak25", schemaVersion: 2 });
+  assert.deepEqual(health.body, { ok: true, app: "speak25", schemaVersion: 3 });
   const missing = await a.getJson("/api/nothing");
   assert.equal(missing.status, 404);
   assert.deepEqual(missing.body, { error: "見つかりません。", reason: "not_found" });

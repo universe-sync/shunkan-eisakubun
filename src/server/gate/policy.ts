@@ -1,9 +1,9 @@
 import { MAX_PASSWORD_LENGTH } from "./password";
 
 /** 合言葉の最小の長さ（コードポイントで数える）。短い合言葉では門が開かない */
-export const MIN_PASSWORD_CHARS = 16;
+export const MIN_PASSWORD_CHARS = 10;
 
-/** 設定が足りているか。GATE_PASSWORD が前後の空白を除いて16字以上（COOKIE_SECRET は見ない。無ければ合言葉から導く） */
+/** 設定が足りているか。GATE_PASSWORD が前後の空白を除いて10字以上（COOKIE_SECRET は見ない。無ければ合言葉から導く） */
 export function isConfigured(env: { GATE_PASSWORD?: string }): boolean {
   const pw = env.GATE_PASSWORD;
   if (typeof pw !== "string") return false;

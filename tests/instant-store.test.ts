@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { forbidNetwork } from "./helpers/no-network";
@@ -14,7 +15,7 @@ const evaluation = (passed = true) => ({ recognitionStatus: "clear", transcript:
 function fixture(existing?: ReturnType<typeof migratedDb>) {
   const db = existing ?? migratedDb(NOW);
   const clock = { t: NOW };
-  return { db, clock, store: createInstantStore({ db, now: () => clock.t, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt }) };
+  return { db, clock, store: createInstantStore({ db, now: () => clock.t, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey: "" }) };
 }
 
 test("教材は分野ごと10問で計100問、IDに重複がない", () => {
@@ -266,19 +267,35 @@ test("1問の時間は session に記録され、続きから始めると書き�
   const first = await store.start(undefined, { questionCount: 10, questionSeconds: 20 });
   let saved = exportState(db);
   assert.equal(saved.sessions[0].questionSeconds, 20);
-  await store.start(undefined, { questionSeconds: "none" });
+  await store.start(undefined, { questionSeconds: 25 });
   saved = exportState(db);
-  assert.equal(saved.sessions[0].questionSeconds, "none");
-  await store.start(undefined, { questionSeconds: 99 }); // 不正は書き換えない
+  assert.equal(saved.sessions[0].questionSeconds, 25);
+  await store.start(undefined, { questionSeconds: 99 as any }); // 不正は書き換えない
+  await store.start(undefined, { questionSeconds: "none" as any }); // 制限なしはもう受け付けない（書き換えない）
   saved = exportState(db);
-  assert.equal(saved.sessions[0].questionSeconds, "none");
+  assert.equal(saved.sessions[0].questionSeconds, 25);
   const finished = await store.finish(first.session.id, "stopped");
-  assert.equal(finished.questionSeconds, "none");
-  assert.equal((await store.results(first.session.id)).questionSeconds, "none");
+  assert.equal(finished.questionSeconds, 25);
+  assert.equal((await store.results(first.session.id)).questionSeconds, 25);
   const other = fixture();
   await other.store.start(undefined, { questionSeconds: 99 });
   const noRecord = exportState(other.db);
   assert.equal("questionSeconds" in noRecord.sessions[0], false);
+});
+
+test("前の版が 'none'（制限なし）で記録した途中の回を続きから始めても壊れず、渡された秒数（今の設定）に書き換わる", async () => {
+  const { db, store } = fixture();
+  const first = await store.start(undefined, { questionCount: 10, questionSeconds: 20 });
+  db.run("UPDATE instant_sessions SET question_seconds = 'none'");
+  const resumed = await store.start(undefined, { questionSeconds: 12 });
+  assert.equal(resumed.resumed, true);
+  assert.equal(exportState(db).sessions[0].questionSeconds, 12);
+  // 秒数が渡されない続きは 'none' のまま残るが、読むと項目なしになり壊れない
+  db.run("UPDATE instant_sessions SET question_seconds = 'none'");
+  assert.equal((await store.start(undefined, {})).resumed, true);
+  assert.equal("questionSeconds" in exportState(db).sessions[0], false);
+  await store.finish(first.session.id, "stopped");
+  assert.equal((await store.results(first.session.id)).questionSeconds, undefined);
 });
 
 test("読み上げ：直した文（correctedAnswerEn）を読み、古い記録は naturalAnswerEn を読む", async () => {
@@ -343,7 +360,7 @@ test("record の途中で例外が起きたら、進捗・回答・件数のど�
     run: (q: string, ...p: any[]) => { writes += 1; if (writes === 2) throw new Error("disk full"); db.run(q, ...p); },
     transaction: <T,>(fn: () => T) => db.transaction(fn),
   };
-  const broken = createInstantStore({ db: failing, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt });
+  const broken = createInstantStore({ db: failing, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey: "" });
   assert.throws(() => broken.record(started.session.id, id, expected, evaluation(true)), /disk full/);
   assert.equal(db.all("SELECT * FROM instant_attempts").length, 0);
   assert.equal(db.all("SELECT * FROM instant_progress").length, 0);
@@ -378,4 +395,253 @@ test("回答の JSON の項目の規則：NULL の項目は出さない・空の
   assert.equal(plain.passed, true);
   assert.equal(plain.model, "test");
   assert.equal("correctedAnswerEn" in plain, false);
+});
+
+test("alice・bob・1人用（''）の記録が混ざらない（同じ db に store を3つ）", async () => {
+  const db = migratedDb(NOW);
+  const make = (userKey: string) => createInstantStore({ db, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey });
+  const alice = make("alice"), bob = make("bob"), solo = make("");
+  const a = alice.start(undefined, { questionCount: 10 });
+  assert.equal(bob.status().activeSession, null);
+  assert.equal(solo.status().activeSession, null);
+  const sessionId = a.session.id;
+  const questionId = a.session.pendingQuestionIds[0];
+  // alice の出題を bob と1人用は操作できない
+  assert.equal(bob.checkAnswerable(sessionId, questionId), null);
+  assert.equal(solo.checkAnswerable(sessionId, questionId), null);
+  const aliceMeta = alice.checkAnswerable(sessionId, questionId);
+  assert.ok(aliceMeta);
+  assert.equal(bob.record(sessionId, questionId, aliceMeta, evaluation(true)), null);
+  assert.equal(bob.finish(sessionId, "stopped"), null);
+  assert.equal(bob.results(sessionId), null);
+  const recorded = alice.record(sessionId, questionId, aliceMeta, evaluation(true));
+  assert.ok(recorded);
+  alice.finish(sessionId, "stopped");
+  assert.equal(alice.history().progress.flatMap((p) => p.attempts).length, 1);
+  assert.equal(bob.history().progress.flatMap((p) => p.attempts).length, 0);
+  assert.equal(solo.history().progress.flatMap((p) => p.attempts).length, 0);
+  // 読み上げ：alice の回答も、alice の終わった回にだけある問題の模範文も bob・1人用からは見えない
+  const attemptId = recorded.attempt.id;
+  assert.ok(alice.speechText(questionId, attemptId, false));
+  assert.equal(bob.speechText(questionId, attemptId, false), null);
+  assert.equal(solo.speechText(questionId, attemptId, false), null);
+  assert.ok(alice.speechText(questionId, undefined, false));
+  assert.equal(bob.speechText(questionId, undefined, false), null);
+  assert.equal(solo.speechText(questionId, undefined, false), null);
+  // alice が回を終えた後でも、bob と 1人用は答え合わせを取れない
+  assert.ok(alice.results(sessionId));
+  assert.equal(bob.results(sessionId), null);
+  assert.equal(solo.results(sessionId), null);
+  assert.equal(bob.finish(sessionId, "stopped"), null);
+  // bob にも自分の進捗と世代がある
+  const bobGeneration = bob.status().generationId;
+  const b = bob.start(undefined, { questionCount: 10 });
+  bob.record(b.session.id, b.session.pendingQuestionIds[0], bob.checkAnswerable(b.session.id, b.session.pendingQuestionIds[0]), evaluation(true));
+  const soloGeneration = solo.status().generationId;
+  assert.notEqual(alice.status().generationId, bobGeneration);
+  assert.equal(alice.status().attempts, 1);
+  assert.equal(bob.status().attempts, 1);
+  assert.equal(solo.status().attempts, 0);
+  // alice のリセットは bob と 1人用に影響しない
+  alice.reset();
+  assert.equal(alice.status().attempts, 0);
+  assert.equal(bob.status().attempts, 1);
+  assert.equal(bob.status().generationId, bobGeneration);
+  assert.equal(bob.status().activeSession?.id, b.session.id);
+  assert.equal(solo.status().generationId, soloGeneration);
+  assert.equal(solo.status().attempts, 0);
+  assert.equal(Number(db.all("SELECT COUNT(*) AS n FROM instant_progress WHERE user_key = ''")[0]?.n), 0);
+  assert.equal(Number(db.all("SELECT COUNT(*) AS n FROM instant_progress WHERE user_key = 'bob'")[0]?.n), 1);
+  // exportState も人ごと
+  assert.equal(exportState(db, "bob").attempts.length, 1);
+  assert.equal(exportState(db, "alice").attempts.length, 0);
+  assert.equal(exportState(db).attempts.length, 0);
+});
+
+test("start の maxCount は問題数を上限で切る", () => {
+  const { store } = fixture();
+  assert.equal(store.start(undefined, { questionCount: 20, maxCount: 7 }).session.total, 7);
+});
+
+test("alice が問題をクリアしても、bob と 1人用の進捗は 0 のまま", () => {
+  const db = migratedDb(NOW);
+  const make = (userKey: string) => createInstantStore({ db, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey });
+  const alice = make("alice"), bob = make("bob"), solo = make("");
+  const ids = instantQuestions.slice(0, 3).map((q) => q.id);
+  importState(db, { schemaVersion: 1, generationId: "gen-1", sessions: [{ id: "s-a", generationId: "gen-1", questionIds: ids, index: 0, startedAt: "2026-10-19T00:00:00.000Z", finishedAt: null }], attempts: [], progress: { q001: { consecutivePasses: 2, clearedAt: null } } }, NOW, "alice");
+  const done = alice.record("s-a", "q001", alice.checkAnswerable("s-a", "q001"), evaluation(true));
+  assert.equal(done.attempt.consecutivePasses, 3);
+  assert.equal(alice.status().cleared, 1);
+  for (const other of [bob, solo]) {
+    assert.equal(other.status().cleared, 0);
+    assert.equal(other.history().progress.find((p) => p.question.id === "q001").consecutivePasses, 0);
+  }
+  assert.equal(alice.history().progress.find((p) => p.question.id === "q001").consecutivePasses, 3);
+});
+
+test("同じ世代 ID でも、bob は alice の出題を操作できない（世代 ID ではなく user_key で守る）", () => {
+  const db = migratedDb(NOW);
+  const make = (userKey: string) => createInstantStore({ db, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey });
+  const alice = make("alice"), bob = make("bob");
+  const ids = instantQuestions.slice(0, 3).map((q) => q.id);
+  const state = (sessions: unknown[]) => ({ schemaVersion: 1, generationId: "gen-same", sessions, attempts: [], progress: {} });
+  importState(db, state([{ id: "s-a", generationId: "gen-same", questionIds: ids, index: 0, startedAt: "2026-10-19T00:00:00.000Z", finishedAt: null }]), NOW, "alice");
+  importState(db, state([]), NOW, "bob");
+  assert.equal(alice.status().generationId, bob.status().generationId);
+  assert.equal(bob.checkAnswerable("s-a", "q001"), null);
+  assert.equal(bob.record("s-a", "q001", { generationId: "gen-same" }, evaluation(true)), null);
+  assert.equal(bob.finish("s-a", "stopped"), null);
+  assert.equal(bob.results("s-a"), null);
+  assert.ok(alice.checkAnswerable("s-a", "q001"));
+  assert.equal(db.all("SELECT COUNT(*) AS n FROM instant_attempts")[0].n, 0);
+});
+
+test("start の maxCount は 1 以上の整数だけ（0・負・小数・NaN は誤りとして例外）", () => {
+  const { store } = fixture();
+  for (const bad of [0, -1, 1.5, Number.NaN, Infinity]) assert.throws(() => store.start(undefined, { questionCount: 10, maxCount: bad }), /maxCount/, String(bad));
+  assert.equal(store.start(undefined, { questionCount: 10, maxCount: 1 }).session.total, 1);
+});
+
+test("session_id で回答を引く問い合わせは、instant_attempts_user 索引を使わない（1人用で全件を読まない）", () => {
+  const db = migratedDb(NOW);
+  const src = readFileSync(new URL("../src/server/instant/store.ts", import.meta.url), "utf8");
+  const queries = [...src.matchAll(/"((?:SELECT|UPDATE|DELETE)[^"]*FROM instant_attempts WHERE session_id = \?(?! AND question_id)[^"]*)"/g)].map((m) => m[1]);
+  assert.equal(queries.length, 3);
+  for (const q of queries) {
+    const params = Array((q.match(/\?/g) ?? []).length).fill("x");
+    const plan = db.all(`EXPLAIN QUERY PLAN ${q}`, ...params).map((r) => String(r.detail)).join(" | ");
+    assert.ok(!plan.includes("instant_attempts_user"), `${q} → ${plan}`);
+    assert.match(plan, /session_id=\?/, plan);
+  }
+});
+
+test("todayAttempts：日本時間の今日に記録された回答の数（回答なしも数え、14:59:59.999Z と 15:00:00.000Z で分かれる）", () => {
+  const db = migratedDb(NOW);
+  const clock = { t: Date.UTC(2026, 9, 21, 14, 59, 59, 999) };
+  const make = (userKey: string) => createInstantStore({ db, now: () => clock.t, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey });
+  const alice = make("alice"), bob = make("bob"), solo = make("");
+  const s = alice.start(undefined, { questionCount: 10 }).session;
+  alice.record(s.id, s.pendingQuestionIds[0], alice.checkAnswerable(s.id, s.pendingQuestionIds[0]), evaluation(true));
+  alice.record(s.id, s.pendingQuestionIds[1], alice.checkAnswerable(s.id, s.pendingQuestionIds[1]), noAnswerEvaluation("timeout"));
+  assert.equal(alice.status().todayAttempts, 2);
+  assert.equal(bob.status().todayAttempts, 0);
+  assert.equal(solo.status().todayAttempts, 0);
+  clock.t = Date.UTC(2026, 9, 21, 15, 0, 0, 0);
+  assert.equal(alice.status().todayAttempts, 0);
+  alice.record(s.id, s.pendingQuestionIds[2], alice.checkAnswerable(s.id, s.pendingQuestionIds[2]), evaluation(false));
+  assert.equal(alice.status().todayAttempts, 1);
+  assert.equal(alice.status().attempts, 3);
+  clock.t = Date.UTC(2026, 9, 22, 14, 59, 59, 999);
+  assert.equal(alice.status().todayAttempts, 1);
+  clock.t = Date.UTC(2026, 9, 22, 15, 0, 0, 0);
+  assert.equal(alice.status().todayAttempts, 0);
+  // 1人用（''）にも付く。reset で今日の数は 0 に戻る
+  clock.t = Date.UTC(2026, 9, 22, 3, 0, 0);
+  const s2 = solo.start(undefined, { questionCount: 10 }).session;
+  solo.record(s2.id, s2.pendingQuestionIds[0], solo.checkAnswerable(s2.id, s2.pendingQuestionIds[0]), evaluation(true));
+  assert.equal(solo.status().todayAttempts, 1);
+  assert.equal(solo.reset().todayAttempts, 0);
+  assert.equal(db.all("SELECT COUNT(*) AS n FROM trial_daily WHERE user_key = ''")[0]?.n, 0);
+});
+
+test("todayAttempts の問い合わせは instant_attempts_user_created の範囲検索（全件を読まない）", () => {
+  const db = migratedDb(NOW);
+  const src = readFileSync(new URL("../src/server/instant/store.ts", import.meta.url), "utf8");
+  const found = /"(SELECT COUNT\(\*\) AS n, COALESCE\(SUM\(score\), 0\) AS total FROM instant_attempts WHERE user_key = \? AND created_at >= \? AND created_at < \?)"/.exec(src);
+  assert.ok(found, "todayAttempts の SQL が見つからない");
+  const plan = db.all(`EXPLAIN QUERY PLAN ${found[1]}`, "", "a", "b").map((r) => String(r.detail)).join(" | ");
+  assert.match(plan, /USING COVERING INDEX instant_attempts_user_created \(user_key=\? AND created_at>\? AND created_at<\?\)/, plan);
+  // created_at は ISO のミリ秒つき（固定の長さ）なので、文字のまま比べられる
+  const store = createInstantStore({ db, now: () => Date.UTC(2026, 0, 2, 3, 4, 5, 6), newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey: "" });
+  const s = store.start().session;
+  store.record(s.id, s.pendingQuestionIds[0], store.checkAnswerable(s.id, s.pendingQuestionIds[0]), evaluation(true));
+  assert.equal(db.all("SELECT created_at FROM instant_attempts")[0]?.created_at, "2026-01-02T03:04:05.006Z");
+});
+
+// ---- 平均点 ----
+const attemptScores = (db: ReturnType<typeof migratedDb>, userKey: string) => Number(db.all("SELECT COALESCE(SUM(score), 0) AS t FROM instant_attempts WHERE user_key = ?", userKey)[0]?.t);
+const metaTotal = (db: ReturnType<typeof migratedDb>, userKey: string) => Number(db.all("SELECT score_total FROM instant_meta WHERE user_key = ?", userKey)[0]?.score_total ?? 0);
+
+test("今日の平均と全体の平均：回答なしは0点で数え、小数第1位で四捨五入、1件も無ければ null、0時で今日が切り替わる", () => {
+  const db = migratedDb(NOW);
+  const clock = { t: Date.UTC(2026, 9, 21, 14, 0, 0) }; // 日本時間 10/21 23:00
+  const store = createInstantStore({ db, now: () => clock.t, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey: "" });
+  const empty = store.status();
+  assert.equal(empty.todayAverage, null);
+  assert.equal(empty.averageScore, null);
+  const ids = instantQuestions.slice(0, 10).map((q) => q.id);
+  importState(db, { schemaVersion: 1, generationId: "gen-1", sessions: [{ id: "s-1", generationId: "gen-1", questionIds: ids, index: 0, startedAt: "2026-10-21T13:00:00.000Z", finishedAt: null }], attempts: [{ id: "a-old", sessionId: "s-0", questionId: "q099", createdAt: "2026-10-20T03:00:00.000Z", ...evaluation(true), score: 70, consecutivePasses: 1 }], progress: {} }, NOW);
+  const before = store.status();
+  assert.equal(before.todayAverage, null);
+  assert.equal(before.averageScore, 70);
+  const rec = (i: number, score: number | "none") => store.record("s-1", ids[i], store.checkAnswerable("s-1", ids[i]), score === "none" ? noAnswerEvaluation("timeout") : { ...evaluation(true), score });
+  assert.equal(rec(0, 96).summary.todayAverage, 96);
+  const second = rec(1, "none").summary;
+  assert.equal(second.todayAverage, 48);   // (96 + 0) / 2
+  assert.equal(second.averageScore, 55.3); // (70 + 96 + 0) / 3 = 55.33…
+  assert.equal(second.attempts, 3);
+  clock.t = Date.UTC(2026, 9, 21, 15, 0, 0, 0); // 日本時間 10/22 0:00
+  const next = store.status();
+  assert.equal(next.todayAverage, null);
+  assert.equal(next.todayAttempts, 0);
+  assert.equal(next.averageScore, 55.3);
+  clock.t = Date.UTC(2026, 9, 21, 14, 59, 59, 999);
+  assert.equal(store.status().todayAverage, 48);
+  // 四捨五入：(100 + 0 + 0) / 3 = 33.33… → 33.3、(100 + 100 + 0) / 3 = 66.66… → 66.7
+  const db2 = migratedDb(NOW);
+  const s2 = createInstantStore({ db: db2, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey: "" });
+  const q = s2.start(undefined, { questionCount: 10 }).session;
+  const put = (i: number, score: number) => s2.record(q.id, q.pendingQuestionIds[i], s2.checkAnswerable(q.id, q.pendingQuestionIds[i]), { ...evaluation(true), score }).summary;
+  assert.equal(put(0, 100).averageScore, 100);
+  assert.equal(put(1, 0).averageScore, 50);
+  assert.equal(put(2, 0).averageScore, 33.3);
+  assert.equal(s2.status().todayAverage, 33.3);
+});
+
+test("平均は人ごと（alice・bob・1人用が混ざらない）。リセットで null に戻り、ほかの人は変わらない", () => {
+  const db = migratedDb(NOW);
+  const make = (userKey: string) => createInstantStore({ db, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey });
+  const alice = make("alice"), bob = make("bob"), solo = make("");
+  const give = (store: ReturnType<typeof make>, scores: number[]) => {
+    const s = store.start(undefined, { questionCount: 10 }).session;
+    scores.forEach((score, i) => store.record(s.id, s.pendingQuestionIds[i], store.checkAnswerable(s.id, s.pendingQuestionIds[i]), { ...evaluation(true), score }));
+  };
+  give(alice, [100, 80]); give(bob, [10]); give(solo, [50, 51]);
+  assert.deepEqual([alice.status().averageScore, alice.status().todayAverage], [90, 90]);
+  assert.deepEqual([bob.status().averageScore, bob.status().todayAverage], [10, 10]);
+  assert.deepEqual([solo.status().averageScore, solo.status().todayAverage], [50.5, 50.5]);
+  alice.reset();
+  assert.deepEqual([alice.status().averageScore, alice.status().todayAverage], [null, null]);
+  assert.equal(bob.status().averageScore, 10);
+  assert.equal(solo.status().averageScore, 50.5);
+  assert.equal(metaTotal(db, "alice"), 0);
+});
+
+test("合計の列（score_total）は、いつもその人の SUM(score) と同じ（記録・失敗の巻き戻し・リセット・取り込みの後も）", () => {
+  const db = migratedDb(NOW);
+  const make = (userKey: string, target: Parameters<typeof createInstantStore>[0]["db"] = db) => createInstantStore({ db: target, now: () => NOW, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey });
+  const alice = make("alice"), bob = make("bob");
+  const check = () => { for (const key of ["alice", "bob"]) assert.equal(metaTotal(db, key), attemptScores(db, key), key); };
+  const s = alice.start(undefined, { questionCount: 10 }).session;
+  const rec = (i: number, score: number) => alice.record(s.id, s.pendingQuestionIds[i], alice.checkAnswerable(s.id, s.pendingQuestionIds[i]), { ...evaluation(true), score });
+  rec(0, 77); check();
+  alice.record(s.id, s.pendingQuestionIds[1], alice.checkAnswerable(s.id, s.pendingQuestionIds[1]), noAnswerEvaluation("next")); check();
+  // 2回目の書き込みで落ちる Db：進捗だけ書かれた状態も巻き戻り、合計も件数も変わらない
+  let writes = 0;
+  const failing = { all: (q: string, ...p: any[]) => db.all(q, ...p), run: (q: string, ...p: any[]) => { writes += 1; if (writes === 3) throw new Error("disk full"); db.run(q, ...p); }, transaction: <T,>(fn: () => T) => db.transaction(fn) };
+  const broken = make("alice", failing as never);
+  const before = alice.status();
+  assert.throws(() => broken.record(s.id, s.pendingQuestionIds[2], broken.checkAnswerable(s.id, s.pendingQuestionIds[2]), { ...evaluation(true), score: 90 }), /disk full/);
+  assert.equal(alice.status().attempts, before.attempts);
+  assert.equal(alice.status().averageScore, before.averageScore);
+  check();
+  rec(2, 90); check();
+  const b = bob.start(undefined, { questionCount: 10 }).session;
+  bob.record(b.id, b.pendingQuestionIds[0], bob.checkAnswerable(b.id, b.pendingQuestionIds[0]), { ...evaluation(false), score: 28 }); check();
+  alice.reset(); check();
+  assert.equal(metaTotal(db, "alice"), 0);
+  // 取り込み（importState）は、入れた回答の合計で作り直す
+  importState(db, { schemaVersion: 1, generationId: "gen-9", sessions: [], attempts: [{ id: "x1", sessionId: "s", questionId: "q001", createdAt: "2026-10-20T00:00:00.000Z", ...evaluation(true), score: 61, consecutivePasses: 1 }, { id: "x2", sessionId: "s", questionId: "q002", createdAt: "2026-10-20T00:00:00.000Z", ...evaluation(false), score: 40, consecutivePasses: 0 }], progress: {} }, NOW, "alice");
+  check();
+  assert.equal(alice.status().averageScore, 50.5);
 });

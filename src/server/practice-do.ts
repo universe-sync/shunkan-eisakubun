@@ -8,6 +8,9 @@ import { cryptoRandomInt } from "./random";
 import type { Db } from "./store/db";
 import { doDb } from "./store/do-db";
 import { loginAttempt } from "./store/login-failures";
+import { trialParticipantsReport, type TrialParticipantsResult } from "./trial/admin";
+import { trialConfig } from "./trial/config";
+import { registerUser, type TrialRegisterResult } from "./trial/users";
 import { runMigrations } from "./store/migrate";
 import { MIGRATIONS } from "./store/migrations/index";
 
@@ -33,5 +36,15 @@ export class PracticeDO extends DurableObject<Env> {
   /** RPC：合言葉の試み 1 回分を数える。合言葉そのものは受け取らない（合ったかどうかだけ）。同期の関数なので途中で割り込まれない */
   loginAttempt(key: string, ok: boolean): LoginDecision {
     return loginAttempt(this.db, key, ok, Date.now());
+  }
+
+  /** RPC：管理用の参加者の一覧。無効なら { ok: false } */
+  trialParticipants(): TrialParticipantsResult {
+    return trialParticipantsReport(this.db, this.env, Date.now());
+  }
+
+  /** RPC：お試しモードの名前の登録。重複の判定と登録は1つのトランザクション（同期）の中 */
+  trialRegister(name: string, currentKey: string | null): TrialRegisterResult {
+    return registerUser(this.db, trialConfig(this.env), name, currentKey, Date.now());
   }
 }

@@ -147,16 +147,13 @@ test("mergeResults：未採点の行に書き起こしが入る（無ければ u
   assert.equal(rows[1].transcript, undefined);
 });
 
-test("制限なし（durationMs が null）：60秒で時間切れと同じ、経過の秒を出し、一時停止の時間は数えない", () => {
-  const c = startCountdown(1000, null);
-  assert.equal(c.durationMs, null);
-  assert.equal(limitMs(c), 60000);
-  assert.equal(elapsedWholeSeconds(c, 13_999), 12);
-  assert.equal(isTimeUp(c, 60_999), false);
-  assert.equal(isTimeUp(c, 61_000), true);
-  const resumed = resumeCountdown(pauseCountdown(c, 11_000), 41_000); // 30秒止めた
-  assert.equal(isTimeUp(resumed, 90_999), false);
-  assert.equal(isTimeUp(resumed, 91_000), true);
+test("一時停止の時間は数えない（10秒の問題を3秒目に30秒止めて再開）", () => {
+  const c = startCountdown(1000, 10_000);
+  assert.equal(limitMs(c), 10_000);
+  const resumed = resumeCountdown(pauseCountdown(c, 4000), 34_000); // 3秒進んで30秒止めた
+  assert.equal(isTimeUp(resumed, 40_999), false);
+  assert.equal(isTimeUp(resumed, 41_000), true);
+  assert.equal(elapsedWholeSeconds(resumed, 36_999), 5);
 });
 
 test("秒数指定（15・30秒）：残りの秒（切り上げ）と isTimeUp の境目", () => {
@@ -170,20 +167,20 @@ test("秒数指定（15・30秒）：残りの秒（切り上げ）と isTimeUp 
   }
 });
 
-test("reducer：begin の durationMs（null・15000・指定なし）は次の問題へ進んでも保たれる", () => {
+test("reducer：begin の durationMs（15000・指定なし）は次の問題へ進んでも保たれる", () => {
   const begin = (durationMs) => run(initialRun(), { type: "request_mic" }, { type: "begin", sessionId: "s", questions, now: 0, ...(durationMs === undefined ? {} : { durationMs }) });
-  for (const [given, expected] of [[null, null], [15000, 15000], [undefined, 10000]]) {
+  for (const [given, expected] of [[15000, 15000], [undefined, 10000]]) {
     const state = run(begin(given), { type: "advance", now: 5000 });
     assert.equal(state.countdown.durationMs, expected, String(given));
     assert.equal(run(state, { type: "advance", now: 9000 }).countdown?.durationMs ?? expected, expected);
   }
 });
 
-test("制限なしの Tab：0.5秒のガードと、押しっぱなし・変換中の block は同じ", () => {
-  const state = run(initialRun(), { type: "request_mic" }, { type: "begin", sessionId: "s", questions, now: 0, durationMs: null });
+test("Tab：0.5秒のガードと、押しっぱなし・変換中の block", () => {
+  const state = run(initialRun(), { type: "request_mic" }, { type: "begin", sessionId: "s", questions, now: 0, durationMs: 15_000 });
   assert.equal(nextKeyAction(state, { key: "Tab" }, 300), "block");
   assert.equal(nextKeyAction(state, { key: "Tab" }, 500), "skip");
-  assert.equal(canSkip(state, 59_000), true);
+  assert.equal(canSkip(state, 14_000), true);
   assert.equal(nextKeyAction(state, { key: "Tab", repeat: true }, 600), "block");
   assert.equal(nextKeyAction(state, { key: "Tab", isComposing: true }, 600), "block");
 });

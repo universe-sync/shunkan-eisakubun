@@ -118,8 +118,8 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
     <li>
       <h3>合言葉を決める</h3>
       <ul>
-        <li><strong>16字以上256字以内</strong>。前後の空白・改行は無視されます。</li>
-        <li>パスワード管理アプリで乱数を作って保存するのがおすすめです。</li>
+        <li><strong>10字以上256字以内</strong>。前後の空白・改行は無視されます。</li>
+        <li>メンバーが入力しやすい短いフレーズでもかまいません。名前や公開日などから容易に推測できるものと、他のサービスのパスワード流用は避けます。</li>
         <li>ユーザー名はありません。名前を足しても、合言葉を長くするのと変わらないためです。</li>
       </ul>
     </li>
@@ -148,7 +148,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
       <tr><td>1問</td><td class="num">約0.06円</td></tr>
       <tr><td>10問</td><td class="num">約0.6円</td></tr>
       <tr><td>50問</td><td class="num">約3円</td></tr>
-      <tr><td>聞き取り（30秒いっぱい／60秒）</td><td class="num">約0.23円／約0.47円</td></tr>
+      <tr><td>聞き取り（30秒いっぱい）</td><td class="num">約0.23円</td></tr>
       <tr><td>Claude の採点（1問）</td><td class="num">約0.03円</td></tr>
       <tr><td>読み上げ（1回）</td><td class="num">約0.1円</td></tr>
     </table>
@@ -170,7 +170,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
   <div class="tablewrap">
     <table>
       <tr><th>表示・状態</th><th>原因と対処</th></tr>
-      <tr><td>「門を閉じています」（503）</td><td>合言葉が未設定、16字未満、または256字超です。登録し直します。</td></tr>
+      <tr><td>「門を閉じています」（503）</td><td>合言葉が未設定、10字未満、または256字超です。登録し直します。</td></tr>
       <tr><td>「しばらく入れません」（429）</td><td>合言葉の間違いが続きました。約10分待ちます。全体で10分に30回間違えると、正しい合言葉でも10分入れません。</td></tr>
       <tr><td>「Claude の月の上限（…）に達しました」</td><td>Claude Console で自分が決めた支出上限、または Anthropic 側の利用段階の上限に達しました。上限を上げるか、戻るまで待ちます。</td></tr>
       <tr><td>「Claude の残高が足りません。」</td><td>Claude Console で残高を確かめます。</td></tr>
@@ -190,7 +190,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
   <ul>
     <li>入口は合言葉だけです。失敗は10分のあいだに、IP ごとに5回、全体で30回までです。</li>
     <li>入ったあとは cookie（180日・HttpOnly・署名つき）で見分けます。ログアウトは、その端末の cookie を消すだけです。cookie が漏れたら、合言葉を変えてください。</li>
-    <li>cookie が漏れた場合、合言葉が弱いとそこから割り出されるおそれがあります。合言葉は16字以上の乱数にしてください。</li>
+    <li>cookie が漏れた場合に備え、<code>COOKIE_SECRET</code> を別の強い乱数で登録してください。共有する合言葉は最低10字で、他で使っていない推測されにくいものにします。</li>
     <li>検索に出ない設定にしています。</li>
   </ul>
 

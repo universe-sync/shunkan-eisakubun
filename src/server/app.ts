@@ -5,25 +5,35 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { secureHeaders } from "hono/secure-headers";
 import type { LoginDecision } from "./gate/limit";
+import { NAME_RULE_MESSAGE } from "../shared/trial-rules.js";
 import { MAX_PASSWORD_LENGTH, passwordMatches } from "./gate/password";
 import { ICON_PATHS, clientKey, cookieSecure, gateExempt, gatePassword, isConfigured, isLoopbackHost } from "./gate/policy";
+import { USER_COOKIE, USER_KEY_HEADER, USER_MAX_AGE_SEC, encodeUserKey, issueUserToken, verifyUserToken } from "./gate/user-token";
 import { GATE_COOKIE, GATE_MAX_AGE_SEC, issueToken, resolveCookieSecret, verifyToken } from "./gate/token";
 import { requestPath } from "./path";
+import { trialEnabled } from "./trial/config";
+import type { TrialParticipantsResult } from "./trial/admin";
+import type { TrialRegisterResult } from "./trial/users";
 
 export interface AssetsPort { fetch(req: Request): Promise<Response> }
 export interface PracticePort {
   fetch(req: Request): Promise<Response>;
   loginAttempt(key: string, ok: boolean): Promise<LoginDecision>;
+  trialRegister(name: string, currentKey: string | null): Promise<TrialRegisterResult>;
+  trialParticipants(): Promise<TrialParticipantsResult>;
 }
-export interface WorkerEnv { ASSETS: AssetsPort; GATE_PASSWORD?: string; COOKIE_SECRET?: string }
+export interface WorkerEnv { ASSETS: AssetsPort; GATE_PASSWORD?: string; COOKIE_SECRET?: string; TRIAL_MODE?: string; TRIAL_ADMIN_TOKEN?: string }
 
 const NO_STORE = "no-store";
 // 本文の上限。answer だけ録音（base64）が入るので大きい。DO の api.ts の値と同じ
 export const ANSWER_BODY_LIMIT = 4_194_304;
 export const DEFAULT_BODY_LIMIT = 61_440;
 const LOGIN_BODY_LIMIT = 4096;
+const TRIAL_BODY_LIMIT = 4096;
+const ADMIN_TOKEN_MIN = 32; // 管理用の合言葉（TRIAL_ADMIN_TOKEN）の長さ
+const NAME_INPUT_MAX = 200; // これを超える文字は名前として読まない（長すぎる入力を DO へ送らない）
 
-const NOT_CONFIGURED_MESSAGE = "合言葉（GATE_PASSWORD）が未設定か16字未満か256字超のため、門を閉じています。Cloudflare の「Variables and Secrets」に16字以上・256字以内の合言葉を Secret として登録してください。";
+const NOT_CONFIGURED_MESSAGE = "合言葉（GATE_PASSWORD）が未設定か10字未満か256字超のため、門を閉じています。Cloudflare の「Variables and Secrets」に10字以上・256字以内の合言葉を Secret として登録してください。";
 const UNAUTHORIZED_MESSAGE = "ログインが必要です。ページを再読み込みして、合言葉を入れてください。";
 
 function isSafeMethod(m: string): boolean { return m === "GET" || m === "HEAD"; }
@@ -37,13 +47,22 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
   const now = o.now ?? (() => Date.now());
 
   const noStore = (c: Context): void => { c.header("Cache-Control", NO_STORE); };
-  type FailStatus = 400 | 401 | 403 | 405 | 413 | 429 | 500 | 503;
+  type FailStatus = 400 | 401 | 403 | 405 | 409 | 413 | 429 | 500 | 503;
   const fail = (c: Context, error: string, reason: string, status: FailStatus, extra: Record<string, unknown> = {}) => {
     noStore(c);
     return c.json({ error, reason, ...extra }, status);
   };
   const toLogin = (c: Context) => { noStore(c); return c.redirect("/login", 302); };
+  const trialBodyLimit = bodyLimit({ maxSize: TRIAL_BODY_LIMIT, onError: (c) => tooLarge(c) });
   const tooLarge = (c: Context) => fail(c, "送られたデータが大きすぎます。", "too_large", 413);
+  const notAllowed = (c: Context) => fail(c, "この操作は受け付けていません。", "method_not_allowed", 405);
+  // 最後の受け皿：ASSETS の応答を写して返す（html には private, no-cache）
+  const assetsPassthrough = async (c: Context<{ Bindings: E }>): Promise<Response> => {
+    const r = copy(await c.env.ASSETS.fetch(c.req.raw));
+    if ((r.headers.get("Content-Type") ?? "").startsWith("text/html")) r.headers.set("Cache-Control", "private, no-cache");
+    return r;
+  };
+  const userCookieOptions = (c: Context) => ({ path: "/", httpOnly: true, sameSite: "Lax" as const, secure: cookieSecure(new URL(c.req.url)) });
 
   // 1. 守りのヘッダー（next() の後で足す。302・401・アセットを含むすべての応答に付く）
   app.use("*", secureHeaders({
@@ -108,6 +127,8 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
   // 5. 本文の上限（門の後）。/login は Worker が自分で読むので bodyLimit。/api は Content-Length を先に見て、DO を呼ばずに断る
   //    Content-Length が無い送り方は、DO の readLimitedText が止める
   app.use("/login", bodyLimit({ maxSize: LOGIN_BODY_LIMIT, onError: tooLarge }));
+  // お試しモードのときだけ掛ける（1人用では掛けない＝大きな本文でも今と同じ 405）
+  app.use("/trial/*", async (c, next) => (trialEnabled(c.env) ? trialBodyLimit(c, next) : next()));
   app.use("/api/*", async (c, next) => {
     if (!isSafeMethod(c.req.method)) {
       const declared = Number(c.req.header("Content-Length"));
@@ -153,6 +174,79 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
     return c.json({ ok: true }, 200);
   });
 
+  // お試しモードの名前。cookie（app_user）は Worker だけが出す。1人用では今と同じ 405
+  app.post("/trial/name", async (c) => {
+    if (!trialEnabled(c.env)) return notAllowed(c);
+    let name: unknown;
+    try {
+      const parsed: unknown = JSON.parse(await c.req.text());
+      name = typeof parsed === "object" && parsed !== null ? (parsed as { name?: unknown }).name : undefined;
+    } catch {
+      name = undefined;
+    }
+    if (typeof name !== "string" || name.length > NAME_INPUT_MAX) return fail(c, NAME_RULE_MESSAGE, "bad_name", 400);
+    const secret = await resolveCookieSecret(c.env);
+    const currentKey = await verifyUserToken(secret, getCookie(c, USER_COOKIE), now());
+    const r = await o.practice(c.env).trialRegister(name, currentKey);
+    if (!r.ok || r.key === undefined) {
+      if (r.reason === "bad_name") return fail(c, r.message ?? NAME_RULE_MESSAGE, "bad_name", 400);
+      if (r.reason === "name_taken") return fail(c, r.message ?? "", "name_taken", 409);
+      if (r.reason === "trial_closed") return fail(c, r.message ?? "", "trial_closed", 403);
+      return notAllowed(c);
+    }
+    setCookie(c, USER_COOKIE, await issueUserToken(secret, r.key, now()), { ...userCookieOptions(c), maxAge: USER_MAX_AGE_SEC });
+    noStore(c);
+    return c.json({ ok: true, name: r.displayName }, 200);
+  });
+
+  app.post("/trial/leave", (c) => {
+    if (!trialEnabled(c.env)) return notAllowed(c);
+    deleteCookie(c, USER_COOKIE, userCookieOptions(c));
+    noStore(c);
+    return c.json({ ok: true }, 200);
+  });
+
+  // 管理用の参加者の一覧（オーナーだけ）。1人用では今と同じ 405。合言葉は本文だけで受け、失敗はメンバーの合言葉の失敗と同じ枠で数える
+  app.post("/trial/admin/participants", async (c) => {
+    if (!trialEnabled(c.env)) return notAllowed(c);
+    const expected = (c.env.TRIAL_ADMIN_TOKEN ?? "").trim();
+    if (expected.length < ADMIN_TOKEN_MIN || expected.length > MAX_PASSWORD_LENGTH) {
+      return fail(c, "管理用の合言葉（TRIAL_ADMIN_TOKEN）が未設定か、32字未満・256字超のため、一覧は出せません。Cloudflare の「Variables and Secrets」に32字以上256字以内の合言葉を Secret として登録してください。", "admin_not_configured", 503);
+    }
+    let token: unknown;
+    try {
+      const parsed: unknown = JSON.parse(await c.req.text());
+      token = typeof parsed === "object" && parsed !== null ? (parsed as { token?: unknown }).token : undefined;
+    } catch {
+      token = undefined;
+    }
+    if (typeof token === "string") token = token.trim();
+    if (typeof token !== "string" || token.length < 1 || token.length > MAX_PASSWORD_LENGTH) return fail(c, "送られたデータの形式が正しくありません。", "bad_request", 400);
+    const ok = await passwordMatches(token, expected);
+    const practice = o.practice(c.env);
+    const decision = await practice.loginAttempt(clientKey(c.req.raw), ok);
+    if (decision.result === "limited") {
+      noStore(c);
+      c.header("Retry-After", String(decision.retryAfterSec));
+      const minutes = Math.max(1, Math.ceil(decision.retryAfterSec / 60));
+      return c.json({ error: `合言葉の間違いが続いたため、しばらく入れません。約${minutes}分後に試してください。`, reason: "limited", retryAfterSec: decision.retryAfterSec }, 429);
+    }
+    if (decision.result === "wrong") return fail(c, "管理用の合言葉が違います。", "wrong", 403);
+    const report = await practice.trialParticipants();
+    if (!report.ok) return notAllowed(c);
+    noStore(c);
+    return c.json(report, 200);
+  });
+
+  // 管理用ページ（React 側の同じ index.html）。お試しでなければ今と同じ（最後の受け皿＝ASSETS の 404）
+  app.get("/trial/admin", async (c) => {
+    if (!trialEnabled(c.env)) return assetsPassthrough(c);
+    const index = new Request(new URL("/", c.req.url).toString(), { method: "GET", headers: c.req.raw.headers });
+    const r = copy(await c.env.ASSETS.fetch(index));
+    r.headers.set("Cache-Control", "private, no-cache");
+    return r;
+  });
+
   app.get("/login", async (c) => {
     if (isConfigured(c.env)) {
       const token = getCookie(c, GATE_COOKIE);
@@ -183,21 +277,30 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
     });
   }
 
+  // クライアントが送った X-User-Key は必ず捨てる。お試しでは app_user を検証して Worker が付け直す（日本語をヘッダーに入れられないので base64url）
+  const forwardRequest = async (c: Context<{ Bindings: E }>): Promise<Request> => {
+    const raw = c.req.raw;
+    const trial = trialEnabled(c.env);
+    if (!trial && !raw.headers.has(USER_KEY_HEADER)) return raw; // 1人用のふだんの道：今と同じ Request をそのまま渡す
+    const headers = new Headers(raw.headers);
+    headers.delete(USER_KEY_HEADER);
+    if (trial) {
+      const key = await verifyUserToken(await resolveCookieSecret(c.env), getCookie(c, USER_COOKIE), now());
+      if (key) headers.set(USER_KEY_HEADER, encodeUserKey(key));
+    }
+    return new Request(raw.url, { method: raw.method, headers, body: raw.body, ...(raw.body ? { duplex: "half" } : {}) } as RequestInit);
+  };
   const toPractice = async (c: Context<{ Bindings: E }>): Promise<Response> => {
-    const r = copy(await o.practice(c.env).fetch(c.req.raw));
+    const r = copy(await o.practice(c.env).fetch(await forwardRequest(c)));
     r.headers.set("Cache-Control", NO_STORE);
     return r;
   };
   app.all("/api", toPractice);
   app.all("/api/*", toPractice);
 
-  app.get("*", async (c) => {
-    const r = copy(await c.env.ASSETS.fetch(c.req.raw));
-    if ((r.headers.get("Content-Type") ?? "").startsWith("text/html")) r.headers.set("Cache-Control", "private, no-cache");
-    return r;
-  });
+  app.get("*", assetsPassthrough);
 
-  app.all("*", (c) => fail(c, "この操作は受け付けていません。", "method_not_allowed", 405));
+  app.all("*", notAllowed);
 
   // 7. 例外
   app.onError((err, c) => {

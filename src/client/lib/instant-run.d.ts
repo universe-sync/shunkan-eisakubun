@@ -1,9 +1,8 @@
 export const QUESTION_SECONDS: 10;
 export const QUESTION_MS: number;
-export const NO_LIMIT_CAP_MS: number;
 export const FINISH_WAIT_HINT_MS: number;
-export type Countdown = { durationMs: number | null; startedAt: number; pausedAt: number | null; pausedMs: number };
-export function startCountdown(now: number, durationMs?: number | null): Countdown;
+export type Countdown = { durationMs: number; startedAt: number; pausedAt: number | null; pausedMs: number };
+export function startCountdown(now: number, durationMs?: number): Countdown;
 export function limitMs(countdown: Countdown): number;
 export function elapsedMs(countdown: Countdown, now: number): number;
 export function pauseCountdown(countdown: Countdown, now: number): Countdown;
@@ -24,7 +23,7 @@ export type RunPhase = "idle" | "mic" | "running" | "paused" | "finishing" | "do
 export type RunState = { phase: RunPhase; sessionId: string | null; questions: RunQuestion[]; position: number; countdown: Countdown | null; outcomes: Record<string, Outcome>; stopReason: "completed" | "stopped" | null };
 export type RunEvent =
   | { type: "request_mic" } | { type: "abort" }
-  | { type: "begin"; sessionId: string; questions: RunQuestion[]; now: number; durationMs?: number | null }
+  | { type: "begin"; sessionId: string; questions: RunQuestion[]; now: number; durationMs?: number }
   | { type: "advance"; now: number } | { type: "pause"; now: number } | { type: "resume"; now: number }
   | { type: "stop"; segmentSent: boolean }
   | { type: "outcome"; questionId: string; outcome: Exclude<Outcome, { kind: "pending" }> }

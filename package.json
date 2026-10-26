@@ -8,7 +8,9 @@
   "engines": { "node": ">=22.12" },
   "scripts": {
     "dev": "vite build && concurrently -k -n web,worker -c green,magenta \"vite build --watch\" \"wrangler dev\"",
+    "dev:trial": "vite build && concurrently -k -n web,worker -c green,magenta \"vite build --watch\" \"wrangler dev --config wrangler.trial.jsonc\"",
     "deploy": "vite build && wrangler deploy",
+    "deploy:trial": "vite build && wrangler deploy --config wrangler.trial.jsonc",
     "build": "npm run typecheck && vite build && wrangler deploy --dry-run --outdir dist/worker",
     "test": "node --disable-warning=ExperimentalWarning --import tsx --test \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.node.json",
@@ -16,7 +18,7 @@
   },
   "cloudflare": {
     "bindings": {
-      "GATE_PASSWORD": { "description": "このアプリに入るための**合言葉**です。**16字以上256字以内**で、他で使っていない長いものにしてください（パスワード管理アプリで乱数を作って保存するのがおすすめ）。前後の空白・改行は無視されます。" },
+      "GATE_PASSWORD": { "description": "このアプリに入るための**合言葉**です。**10字以上256字以内**で、他で使っていない、推測されにくいものにしてください。前後の空白・改行は無視されます。" },
       "GEMINI_API_KEY": { "description": "Gemini の API キー（聞き取りと読み上げに使います）。[Google AI Studio](https://aistudio.google.com/) で、**請求先をつなぎ、1か月の費用の上限を掛けてから**キーを作ってください。" },
       "ANTHROPIC_API_KEY": { "description": "Claude の API キー（採点に使います）。[Claude Console](https://platform.claude.com/) で**新しいワークスペースを作って支出上限（月）を入れてから**、そのワークスペースでキーを作ってください。" }
     }
