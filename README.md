@@ -1,9 +1,9 @@
-# speak25
+# 瞬間英作文
 
-毎日25分、**日本語の問題文を見て、声に出して英語にする**練習アプリです。スマホでも使うなら自分のCloudflareへデプロイ、PCだけで使うならPC内でローカル起動できます。どちらも自分のGemini・Claudeのキーで動かします。
+**日本語を見て声に出して英語にする**アプリです。スマホでも使うならCloudflareにデプロイ、PCだけならローカル起動でお使いいただけます。
 
 - ブラウザのマイクで答えを録音すると、Gemini が英語の文字に書き起こし、Claude が採点します。
-- 作者のサーバーは通りません。キー・合言葉・練習の記録は、自分のCloudflareまたはPC内に置かれます。
+- キー・合言葉・練習の記録は、自分のCloudflareまたはPC内に置かれます。
 - 2つの始め方を図解したページ：<https://universe-sync.com/apps/speak25/>（同じ内容をこのリポジトリの `docs/index.html` にも入れています）
 - 公開直後のため、まだ実際に試していない手順があります（特に「更新の取り込み」）。手順に違いがあれば教えてください。
 
@@ -46,7 +46,6 @@ PCのブラウザ → 同じPCのローカルWorker・Durable Object → Gemini�
 
 - Cloudflare版では、合言葉とAPIキーはCloudflareのSecret、練習の記録はCloudflareのDurable Object（SQLite）に入ります。
 - ローカル版では、合言葉とAPIキーはPC内の`.dev.vars`、練習の記録はPC内の`.wrangler/state`に入ります。
-- どちらも作者のサーバーは通りません。
 - 外への通信は Gemini と Anthropic だけです。
 
 ## お金のこと

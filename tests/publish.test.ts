@@ -77,6 +77,7 @@ test("手順のページに外部の読み込み（script・link・img・外部�
   assert.match(html, /<meta name="viewport"/);
   assert.match(html, /<html lang="ja">/);
   assert.match(html, /prefers-color-scheme: dark/);
+  for (const tag of html.match(/<a [^>]*href="https?:\/\/[^>]*>/g) ?? []) assert.match(tag, /target="_blank" rel="noopener noreferrer"/, tag);
 });
 
 test("package.json の cloudflare.bindings が .dev.vars.example の有効な項目とそろい、description がある", () => {
