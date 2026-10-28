@@ -190,14 +190,15 @@ Cloudflareへ公開せず、PCの中だけで動かします。スマホや別�
 Deploy ボタンで作られたリポジトリはフォークではないため、GitHub の「Sync fork」は出ません。次のどれかで取り込みます。
 
 - **いちばん簡単**：もう一度 Deploy ボタンで置き直します。**練習の記録は引き継がれません。**合言葉とキーは入れ直します。GitHub のリポジトリと Worker の名前は前と別にするか、先に古いものを消してください。古い Worker を消すと、その記録は完全に消えます。古い Worker は、Cloudflare のダッシュボードで削除します。
-- **Git が使える人**：自分のリポジトリを clone して、次を実行します。push すると Cloudflare が作り直し、記録は残ります。
+- **Git が使える人**：Deploy ボタンで作られた自分のリポジトリを clone して、次を実行します。push すると Cloudflare が作り直し、記録は残ります。
   ```
   git remote add upstream https://github.com/universe-sync/shunkan-eisakubun.git
   git fetch upstream
-  git merge upstream/main
-  git push
+  git merge upstream/main --allow-unrelated-histories
   ```
-  「履歴がつながっていない」と言われたら `--allow-unrelated-histories` が要り、衝突を直す必要があります。衝突を直すとき、`wrangler.jsonc` の `name` は自分の Worker の名前のまま残してください（元の `shunkan-eisakubun` に戻すと、別の Worker ができて記録が空に見えます）。
+  - Deploy ボタンで作られたリポジトリは「source repo import」という1件のコミットから始まり、元のリポジトリと履歴がつながっていません。そのため、**最初の1回は `--allow-unrelated-histories` が必ず要ります**。2回目からは `git merge upstream/main` だけで取り込めます。
+  - 最初の1回は、Deploy の後に元で直したファイルと `wrangler.jsonc` がぶつかります。`wrangler.jsonc` は、`name`（自分の Worker の名前）と、設定画面で入れた1日の上限の値を自分のものに残してください。`name` を元の `shunkan-eisakubun` に戻すと、別の Worker ができて記録が空に見えます。ほかのファイルは、元（upstream）の内容にそろえてかまいません。
+  - ぶつかった所を直したら、`git add` と `git commit` をしてから `git push` します。
 - **最初から更新を取り込みたい人**：Deploy ボタンを使わず、GitHub でこのリポジトリをフォークします。Cloudflare の「Workers & Pages → 作成 → リポジトリをインポート」でそのフォークを選び、最初のデプロイの後に Settings で Secret を3つ登録します（入れるまでは門が閉じたまま＝503）。この方法なら「Sync fork」が使えます。
   - 画面のビルドの設定には、「ビルドのコマンド：`npm run build`」「デプロイのコマンド：`npm run deploy`」を入れてください（既定のままだと画面が作られず、失敗することがあります）。
   - この方法は、まだ実際に試していません。
