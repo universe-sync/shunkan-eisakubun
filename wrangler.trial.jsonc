@@ -34,7 +34,7 @@
     "TRIAL_MODE": "1",
     "TRIAL_QUESTIONS_PER_DAY": "100",
     "TRIAL_SPEECH_PER_DAY": "10",
-    "TRIAL_ENDS_ON": "2026-11-01"
+    "TRIAL_ENDS_ON": "2026-11-04"
   },
   "observability": { "enabled": true }
 }
