@@ -415,7 +415,7 @@ test("health：アプリ名と DB の版を返す。知らない道筋は404の 
   const a = makeApi();
   const health = await a.getJson("/api/health");
   assert.equal(health.status, 200);
-  assert.deepEqual(health.body, { ok: true, app: "speak25", schemaVersion: 3 });
+  assert.deepEqual(health.body, { ok: true, app: "瞬間英作文", schemaVersion: 3 });
   const missing = await a.getJson("/api/nothing");
   assert.equal(missing.status, 404);
   assert.deepEqual(missing.body, { error: "見つかりません。", reason: "not_found" });

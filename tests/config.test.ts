@@ -18,7 +18,7 @@ function wrangler(file = "wrangler.jsonc"): any {
 
 test("wrangler.jsonc：名前・入口・互換日付・フラグ・assets・DO・移行・ポート", () => {
   const w = wrangler();
-  assert.equal(w.name, "speak25");
+  assert.equal(w.name, "shunkan-eisakubun");
   assert.equal(w.main, "src/server/worker.ts");
   assert.equal(w.compatibility_date, "2026-08-15");
   assert.deepEqual(w.compatibility_flags, ["nodejs_compat", "nodejs_compat_do_not_populate_process_env"]);
@@ -54,7 +54,7 @@ test("package.json：版がすべて固定（^・~・latest なし）で、deplo
   assert.equal(p.scripts["deploy:trial"], "vite build && wrangler deploy --config wrangler.trial.jsonc");
   assert.match(p.scripts["dev:trial"], /wrangler dev --config wrangler\.trial\.jsonc/);
   assert.equal(p.engines.node, ">=22.12");
-  assert.equal(p.name, "speak25");
+  assert.equal(p.name, "shunkan-eisakubun");
   assert.equal(p.private, true);
 });
 
@@ -77,7 +77,7 @@ test("index.html の title が APP_NAME と同じで、noindex とアイコン�
   const html = read("index.html");
   assert.equal(html.match(/<title>([^<]*)<\/title>/)?.[1], APP_NAME);
   assert.match(html, /<meta name="robots" content="noindex, nofollow"\/>/);
-  assert.match(html, /<meta name="apple-mobile-web-app-title" content="speak25"\/>/);
+  assert.ok(html.includes(`<meta name="apple-mobile-web-app-title" content="${APP_NAME}"/>`)); // ホーム画面の名前も APP_NAME と同じ
   for (const icon of ["/icon.svg", "/icon-32.png", "/apple-touch-icon.png"]) assert.ok(html.includes(`href="${icon}"`), icon);
   assert.ok(html.includes('src="/src/client/main.tsx"'));
 });
@@ -99,7 +99,7 @@ test("wrangler.trial.jsonc：name・dev・vars だけが wrangler.jsonc と違�
     if (name !== "TRIAL_ENDS_ON") assert.match(value, /^\d{1,6}$/, name);
     assert.ok(!/(KEY|SECRET|PASSWORD|TOKEN)/i.test(name), name);
   }
-  assert.equal(wrangler().name, "speak25"); // 自分用は今までどおり
+  assert.equal(wrangler().name, "shunkan-eisakubun"); // 1人用（Deploy ボタンの初期値）
 });
 
 test(".dev.vars.example：TRIAL_ADMIN_TOKEN はコメント（入力欄にしない）", () => {

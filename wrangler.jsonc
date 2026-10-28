@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // speak25（仮の名前）。Workers（無料プラン）＋ Durable Object（SQLite）1個 ＋ 静的ファイル（Vite の画面）
-  "name": "speak25",
+  // 瞬間英作文。Deploy ボタンの Worker の名前の初期値には、この name が使われる見込み（公式の説明に明記はない）。Workers（無料プラン）＋ Durable Object（SQLite）1個 ＋ 静的ファイル（Vite の画面）
+  "name": "shunkan-eisakubun",
   "main": "src/server/worker.ts",
   // wrangler 4.124.0 の workerd（1.20260815.1）が扱える最新の日付。wrangler を上げるときに一緒に見直す
   "compatibility_date": "2026-08-15",

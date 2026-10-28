@@ -14,7 +14,7 @@
 | **Cloudflareへデプロイ** | スマホ・PCの両方で使いたい。PCを起動したままにしたくない | GitHub・Cloudflare・Google AI Studio・Claude Consoleの各アカウント |
 | **PCでローカル起動** | PCだけで使えればよい。Cloudflareへ公開したくない | Node.js 22.12以上・Google AI Studio・Claude Consoleの各アカウント |
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/speak25)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/shunkan-eisakubun)
 
 ## 何ができるか
 
@@ -119,8 +119,8 @@ PCのブラウザ → 同じPCのローカルWorker・Durable Object → Gemini�
 Cloudflareへ公開せず、PCの中だけで動かします。スマホや別のPCからは使えません。
 
 1. [Node.js公式サイト](https://nodejs.org/ja/download)から、Node.js 22.12以上をインストールします。すでに入っている場合は、ターミナルで`node -v`を実行して確認できます。
-2. このリポジトリの「Code」→「Download ZIP」を押します。ZIPを展開すると`speak25-main`フォルダができます。
-3. ターミナルでその`speak25-main`フォルダへ移動し、必要なものをインストールします。
+2. このリポジトリの「Code」→「Download ZIP」を押します。ZIPを展開すると`shunkan-eisakubun-main`フォルダができます。
+3. ターミナルでその`shunkan-eisakubun-main`フォルダへ移動し、必要なものをインストールします。
    ```sh
    npm install
    ```
@@ -186,19 +186,19 @@ Deploy ボタンで作られたリポジトリはフォークではないため�
 - **いちばん簡単**：もう一度 Deploy ボタンで置き直します。**練習の記録は引き継がれません。**合言葉とキーは入れ直します。GitHub のリポジトリと Worker の名前は前と別にするか、先に古いものを消してください。古い Worker を消すと、その記録は完全に消えます。古い Worker は、Cloudflare のダッシュボードで削除します。
 - **Git が使える人**：自分のリポジトリを clone して、次を実行します。push すると Cloudflare が作り直し、記録は残ります。
   ```
-  git remote add upstream https://github.com/universe-sync/speak25.git
+  git remote add upstream https://github.com/universe-sync/shunkan-eisakubun.git
   git fetch upstream
   git merge upstream/main
   git push
   ```
-  「履歴がつながっていない」と言われたら `--allow-unrelated-histories` が要り、衝突を直す必要があります。衝突を直すとき、`wrangler.jsonc` の `name` は自分の Worker の名前のまま残してください（元の `speak25` に戻すと、別の Worker ができて記録が空に見えます）。
+  「履歴がつながっていない」と言われたら `--allow-unrelated-histories` が要り、衝突を直す必要があります。衝突を直すとき、`wrangler.jsonc` の `name` は自分の Worker の名前のまま残してください（元の `shunkan-eisakubun` に戻すと、別の Worker ができて記録が空に見えます）。
 - **最初から更新を取り込みたい人**：Deploy ボタンを使わず、GitHub でこのリポジトリをフォークします。Cloudflare の「Workers & Pages → 作成 → リポジトリをインポート」でそのフォークを選び、最初のデプロイの後に Settings で Secret を3つ登録します（入れるまでは門が閉じたまま＝503）。この方法なら「Sync fork」が使えます。
   - 画面のビルドの設定には、「ビルドのコマンド：`npm run build`」「デプロイのコマンド：`npm run deploy`」を入れてください（既定のままだと画面が作られず、失敗することがあります）。
   - この方法は、まだ実際に試していません。
 
 #### ローカル版
 
-1. 今の`speak25-main`フォルダを消さずに、新しいZIPをダウンロードして別の場所へ展開します。
+1. 今の`shunkan-eisakubun-main`フォルダを消さずに、新しいZIPをダウンロードして別の場所へ展開します。
 2. 今のフォルダから`.dev.vars`を新しいフォルダへコピーします。練習の記録も引き継ぐ場合は、`.wrangler/state`もコピーします。どちらも外へ公開しないでください。
 3. 新しいフォルダで`npm install`、続けて`npm run dev`を実行します。
 4. 正常に動くことを確認してから、古いフォルダを保管または削除します。

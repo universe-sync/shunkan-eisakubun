@@ -7,6 +7,7 @@
 - `npm test` ・ `npm run typecheck` ・ `npm run bench:audio`（録音1回分の CPU 時間の目安。外へは通信しない）
 - `npm run dev`（画面を作り直してから `wrangler dev`。ずっと動き続ける）・`npm run build`（`wrangler deploy --dry-run` を含むが、アップロードはしない）
 - `npm run deploy` は画面を作ってから本物の Cloudflare に上げる。流す前に、`wrangler.jsonc` の名前と登録済みの Secret を確かめる
+- `wrangler.jsonc` の `name`（`shunkan-eisakubun`）は Deploy ボタンの Worker の名前の初期値に使われる見込み（公式の説明に明記はない）。前の名前で置いた Worker を更新するときは、`name` を変えずに `--name <その Worker の名前>` を付けて出す（`name` を変えると別の Worker ができ、記録が空に見える）
 - `npm run dev:trial`（お試しモードの手元の確認。8821）・`npm run deploy:trial`（お試し用の Worker `speak25-trial` へ。`wrangler.trial.jsonc`）
 - **ロールバックで前の版に戻せない場合がある**：SQL のマイグレーション 003（人ごとの記録）が一度流れた Durable Object は、003 を知らない前の版のコードでは開けない（データベースの版がプログラムより新しい、として止まる）。003 が入る版を出した後は、戻すのではなく直して出し直す
 
@@ -25,7 +26,7 @@
 - ログに本文・書き起こし・cookie・キーを出さない（Claude と Gemini のエラーは状態と code だけ）
 - **`.dev.vars`・`.env*` を読まない・写さない。** 値は各自が `.dev.vars`（git に入れない）か Cloudflare の Secret に入れる
 - 公開するリポジトリなので、個人のパス・メールアドレス・アカウントや請求の情報・キーをファイルに書かない（`tests/publish.test.ts` が確かめる。手元だけの禁止語は git に入れない `tests/publish-forbidden.local.json` に書く）
-- 表示名（仮）は `src/shared/app-info.js` と `index.html` の `<title>` の2か所。一致は `tests/config.test.ts` が確かめる
+- 表示名（瞬間英作文）は `src/shared/app-info.js` の `APP_NAME` と、`index.html` の `<title>`・`apple-mobile-web-app-title` の3か所。一致は `tests/config.test.ts` が確かめる
 
 ## 門と守り
 - 合言葉だけでログインする（ユーザー名は無い）。`GATE_PASSWORD`（前後の空白を除いて10字以上）が無い・短いと門は閉じたまま（POST /login と /api と更新系は 503、ページは 302 /login）

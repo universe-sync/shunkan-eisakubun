@@ -39,7 +39,7 @@ test("/api/* は practice（DO）に渡り、no-store が付く。応答は書�
   const c = await s.cookie();
   const res = await s.req("/api/health", { headers: { Cookie: c } });
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, app: "speak25", schemaVersion: 3 });
+  assert.deepEqual(await res.json(), { ok: true, app: "瞬間英作文", schemaVersion: 3 });
   assert.equal(res.headers.get("Cache-Control"), "no-store");
   assert.deepEqual(s.practice.fetched, ["GET /api/health"]);
   assert.deepEqual(s.assets.requests, []);

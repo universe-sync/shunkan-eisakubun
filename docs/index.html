@@ -81,7 +81,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
   <p>
     <a class="btn" href="#cloudflare">スマホでも使う</a>
     <a class="btn sub" href="#local">PCだけで使う</a>
-    <a class="btn sub" href="https://github.com/universe-sync/speak25" target="_blank" rel="noopener noreferrer">リポジトリを見る</a>
+    <a class="btn sub" href="https://github.com/universe-sync/shunkan-eisakubun" target="_blank" rel="noopener noreferrer">リポジトリを見る</a>
   </p>
 
   <h2>使い方を選ぶ</h2>
@@ -184,7 +184,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
 
   <h2 id="cloudflare">A. スマホでも使う：Cloudflareへデプロイ</h2>
   <p>自分専用のURLを作り、スマホとPCの両方から使う方法です。GitHubとCloudflareの無料アカウントも用意します。</p>
-  <p><a class="btn" href="https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/speak25" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a></p>
+  <p><a class="btn" href="https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/shunkan-eisakubun" target="_blank" rel="noopener noreferrer">Deploy to Cloudflare</a></p>
   <ol class="steps">
     <li>
       <h3>Deployボタンを押す</h3>
@@ -213,11 +213,11 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
     </li>
     <li>
       <h3>アプリをダウンロードする</h3>
-      <p><a href="https://github.com/universe-sync/speak25" target="_blank" rel="noopener noreferrer">GitHubのリポジトリ</a>を開き、「Code」→「Download ZIP」を押します。ZIPを展開すると<code>speak25-main</code>フォルダができます。</p>
+      <p><a href="https://github.com/universe-sync/shunkan-eisakubun" target="_blank" rel="noopener noreferrer">GitHubのリポジトリ</a>を開き、「Code」→「Download ZIP」を押します。ZIPを展開すると<code>shunkan-eisakubun-main</code>フォルダができます。</p>
     </li>
     <li>
       <h3>必要なものをインストールする</h3>
-      <p>ターミナルで<code>speak25-main</code>フォルダへ移動し、次を実行します。</p>
+      <p>ターミナルで<code>shunkan-eisakubun-main</code>フォルダへ移動し、次を実行します。</p>
       <pre class="command"><code>npm install</code></pre>
     </li>
     <li>
@@ -284,7 +284,7 @@ ANTHROPIC_API_KEY=ClaudeのAPIキー</code></pre>
   <p style="margin-top:12px">Claude の月の上限・残高切れ・キーの誤りと、Gemini の残高切れ・請求の設定・キーの誤りを受けると、そのサービスは10分間呼ばなくなります。直したあとも、最大10分は待つことがあります。Gemini の「利用の割り当て」は10分止めず、そのときの呼び出しが断られるだけです（料金はかかりません）。</p>
   <p><strong>Cloudflare版で合言葉やキーを変える：</strong>Cloudflareのダッシュボード → Workers &amp; Pages → このアプリ → Settings → Variables and Secrets。合言葉を変えると、全員のcookieが無効になって入り直しになります。</p>
   <p><strong>ローカル版で合言葉やキーを変える：</strong>ターミナルで<code>Ctrl</code>＋<code>C</code>を押して止め、<code>.dev.vars</code>を編集してから<code>npm run dev</code>で起動し直します。</p>
-  <p><strong>更新を取り込む：</strong>Cloudflare版はもう一度Deployボタンで置き直す方法、ローカル版は新しいZIPを展開して<code>.dev.vars</code>と必要なら<code>.wrangler/state</code>を引き継ぐ方法があります。詳しくは<a href="https://github.com/universe-sync/speak25#更新を取り込むとき" target="_blank" rel="noopener noreferrer">README</a>を見てください。まだ実際に試していない手順があります。</p>
+  <p><strong>更新を取り込む：</strong>Cloudflare版はもう一度Deployボタンで置き直す方法、ローカル版は新しいZIPを展開して<code>.dev.vars</code>と必要なら<code>.wrangler/state</code>を引き継ぐ方法があります。詳しくは<a href="https://github.com/universe-sync/shunkan-eisakubun#更新を取り込むとき" target="_blank" rel="noopener noreferrer">README</a>を見てください。まだ実際に試していない手順があります。</p>
 
   <h2>安全のしくみ</h2>
   <ul>
@@ -296,7 +296,7 @@ ANTHROPIC_API_KEY=ClaudeのAPIキー</code></pre>
 
   <footer>
     <p>MIT ライセンスです。問題文の100問はこのアプリのために作ったもので、書籍とは関係ありません。Gemini・Claude・Cloudflare は、それぞれの会社の商標です。</p>
-    <p><a href="https://github.com/universe-sync/speak25" target="_blank" rel="noopener noreferrer">https://github.com/universe-sync/speak25</a></p>
+    <p><a href="https://github.com/universe-sync/shunkan-eisakubun" target="_blank" rel="noopener noreferrer">https://github.com/universe-sync/shunkan-eisakubun</a></p>
   </footer>
 </main>
 </body>

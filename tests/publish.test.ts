@@ -65,7 +65,7 @@ test("手元の禁止語（tests/publish-forbidden.local.json）がリポジト�
 
 test("README・手順のページ・LICENSE・CLAUDE.md が入っていて、Deploy ボタンの行き先は公開先のリポジトリ", () => {
   for (const name of ["README.md", "docs/index.html", "LICENSE", "CLAUDE.md"]) assert.ok(statSync(join(ROOT, name)).isFile(), name);
-  const url = "https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/speak25";
+  const url = "https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/shunkan-eisakubun";
   assert.ok(readFileSync(join(ROOT, "README.md"), "utf8").includes(url));
   assert.ok(readFileSync(join(ROOT, "docs/index.html"), "utf8").includes(url));
   assert.match(readFileSync(join(ROOT, "LICENSE"), "utf8"), /^MIT License\n\nCopyright \(c\) 2026 universe-sync/);
