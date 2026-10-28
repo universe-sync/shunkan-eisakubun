@@ -187,19 +187,41 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
   <ol class="steps">
     <li>
       <h3>Deployボタンを押す</h3>
+      <p>「Deploy to Cloudflare」を押し、Cloudflareにログインします。「アプリケーションをセットアップする」の画面になります。</p>
+    </li>
+    <li>
+      <h3>GitHubをつなぐ（初めてのときだけ）</h3>
       <ul>
-        <li>「Deploy to Cloudflare」を押し、GitHubとCloudflareにログインします。あなたのGitHubにこのリポジトリの複製ができます。</li>
-        <li>画面に出る3つの値を入れます：<code>GATE_PASSWORD</code>（合言葉）、<code>GEMINI_API_KEY</code>、<code>ANTHROPIC_API_KEY</code>。</li>
-        <li>そのまま進めると、Cloudflareが自分専用のURLを作ります。</li>
+        <li>「Git アカウント」の欄にGitHubのアカウント名が出ていれば、この手順は飛ばします。</li>
+        <li>「新しい GitHub 接続」を押すと、GitHubの「Install &amp; Authorize Cloudflare Workers and Pages」の画面になります。「All repositories」のまま「Install &amp; Authorize」を押します（権限はデプロイの後で絞ります。手順6）。</li>
+        <li>許可した後、リポジトリを選ぶ画面に移ることがあります。そこでは何も選ばずに、このページの「Deploy to Cloudflare」をもう一度押します。「Git アカウント」の欄にアカウント名が出ていれば、つながっています。</li>
+      </ul>
+    </li>
+    <li>
+      <h3>設定を入れてデプロイする</h3>
+      <ul>
+        <li>「プライベート Git リポジトリを作成する」にチェックを入れます（あなたのGitHubに作られる自分用の複製なので、公開する必要はありません）。</li>
+        <li>「プロジェクト名」は、Workerの名前（URLの先頭）と、あなたのGitHubに作られるリポジトリの名前になります。初期値の<code>shunkan-eisakubun</code>のままでかまいません。同じ名前のリポジトリがすでにあるときは、別の名前にします。</li>
+        <li>3つの値を入れます：<code>GATE_PASSWORD</code>（合言葉）、<code>GEMINI_API_KEY</code>、<code>ANTHROPIC_API_KEY</code>。</li>
+        <li><code>DAILY_ANSWER_LIMIT</code>・<code>DAILY_YEN_LIMIT</code>・<code>DAILY_SPEECH_LIMIT</code>は、アプリの中の1日の上限です（下の「お金の目安」）。空欄なら既定の値（300回・約50円・100回）になります。入れられる最大は、それぞれ5000・10000・2000です。</li>
+        <li><code>RATE_ANSWER_PER_MINUTE</code>・<code>RATE_SPEECH_PER_MINUTE</code>と、ビルド・デプロイ・プレビューのコマンドは、表示されたままにします。</li>
+        <li>「デプロイ」を押し、ビルドが終わるのを待ちます。</li>
       </ul>
     </li>
     <li>
       <h3>URL を開く</h3>
       <ul>
-        <li>できた URL <code>https://&lt;Worker の名前&gt;.&lt;あなたのサブドメイン&gt;.workers.dev</code> を開き、合言葉で入ります。</li>
+        <li>できた URL <code>https://&lt;プロジェクト名&gt;.&lt;あなたのサブドメイン&gt;.workers.dev</code> を開き、合言葉で入ります。そのまま練習の画面になります（名前の入力はありません）。</li>
         <li>マイクの許可を出します。</li>
-        <li>スマホでは「ホーム画面に追加」できます（iPhone は共有メニュー、Android の Chrome は ⋮ のメニュー）。</li>
       </ul>
+    </li>
+    <li>
+      <h3>スマホのホーム画面に追加する</h3>
+      <p>iPhone は共有メニュー、Android の Chrome は ⋮ のメニューから「ホーム画面に追加」できます。</p>
+    </li>
+    <li>
+      <h3>GitHubの権限を絞る</h3>
+      <p>GitHubの Settings → Applications →「Installed GitHub Apps」の「Cloudflare Workers and Pages」→「Configure」を開き、「Only select repositories」で今回作られたリポジトリだけを選んで保存します。ほかのリポジトリにCloudflareが触れなくなります。</p>
     </li>
   </ol>
 
@@ -260,7 +282,7 @@ ANTHROPIC_API_KEY=ClaudeのAPIキー</code></pre>
       <tr><td>読み上げの頻度（IP ごと）</td><td class="num">1分に30回</td></tr>
     </table>
   </div>
-  <p style="margin-top:12px">1日は日本時間の0時で区切ります。同時にたくさん送られると、上限を超えることがあります。超える額は、ふつうの長さの回答なら最大で約3円、長い録音が続くと最大で約20円です（どちらも1分ぶんの目安。1分ごとの区切りをまたぐと、その約2倍になることもあります）。値は <code>wrangler.jsonc</code> の <code>vars</code> で変えられます。</p>
+  <p style="margin-top:12px">1日は日本時間の0時で区切ります。同時にたくさん送られると、上限を超えることがあります。超える額は、ふつうの長さの回答なら最大で約3円、長い録音が続くと最大で約20円です（どちらも1分ぶんの目安。1分ごとの区切りをまたぐと、その約2倍になることもあります）。値は Deploy ボタンの設定画面か、<code>wrangler.jsonc</code> の <code>vars</code> で変えられます（空欄なら既定の値）。</p>
 
   <h2>困ったとき</h2>
   <div class="tablewrap">

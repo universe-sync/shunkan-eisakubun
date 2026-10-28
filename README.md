@@ -65,7 +65,7 @@ PCのブラウザ → 同じPCのローカルWorker・Durable Object → Gemini�
 - **使いすぎを防ぐ上限を、キーを作る前に掛けてください。**
   - Gemini：Google AI Studio の「利用額」の画面で、**1か月の費用の上限**を設定します（試験運用の機能です。画面に出ないときは、プロジェクトごとの上限が無いので、前払いの残高を少なめにしておくと安全です）。
   - Claude：Claude Console で**新しいワークスペース**を作り、そこに**支出上限**（月）を入れます。既定のワークスペースには上限を掛けられないので、必ず新しく作ってください。
-- アプリの中にも上限があります（`wrangler.jsonc` の `vars` で変えられます）。
+- アプリの中にも上限があります（Deploy ボタンの設定画面か、`wrangler.jsonc` の `vars` で変えられます。空欄なら既定の値です）。
 
   | 上限 | 既定 |
   |---|---|
@@ -103,15 +103,22 @@ PCのブラウザ → 同じPCのローカルWorker・Durable Object → Gemini�
 
 自分専用のURLを作り、スマホとPCの両方から使う方法です。GitHubとCloudflareの無料アカウントも用意します。
 
-1. 上の **Deploy to Cloudflare** のボタンを押します。
-2. GitHubとCloudflareにログインします（あなたのGitHubにこのリポジトリの複製ができます）。
-3. 画面に出る3つの値を入れます。
-   - `GATE_PASSWORD`：3.で決めた合言葉
-   - `GEMINI_API_KEY`：1.で作ったキー
-   - `ANTHROPIC_API_KEY`：2.で作ったキー
-4. そのまま進めると、Cloudflareが自分専用のURLを作ります。
-5. できたURL（`https://<Workerの名前>.<あなたのサブドメイン>.workers.dev`）を開き、合言葉で入って、マイクを許可します。
-6. スマホでは**ホーム画面に追加**できます（iPhoneは共有メニュー、AndroidのChromeは ⋮ のメニュー）。
+1. 上の **Deploy to Cloudflare** のボタンを押し、Cloudflareにログインします。「アプリケーションをセットアップする」の画面になります。
+2. **GitHubをつなぎます（初めてのときだけ）。**「Git アカウント」の欄にGitHubのアカウント名が出ていれば、この手順は飛ばします。
+   - 「新しい GitHub 接続」を押すと、GitHubの「Install & Authorize Cloudflare Workers and Pages」の画面になります。「All repositories」のまま「Install & Authorize」を押します（権限はデプロイの後で絞ります。手順6）。
+   - 許可した後、リポジトリを選ぶ画面に移ることがあります。そこでは何も選ばずに、もう一度 **Deploy to Cloudflare** のボタンを押します。「Git アカウント」の欄にアカウント名が出ていれば、つながっています。
+3. 設定を入れて「デプロイ」を押します。
+   - 「プライベート Git リポジトリを作成する」にチェックを入れます（あなたのGitHubに作られる自分用の複製なので、公開する必要はありません）。
+   - 「プロジェクト名」は、Workerの名前（URLの先頭）と、あなたのGitHubに作られるリポジトリの名前になります。初期値の`shunkan-eisakubun`のままでかまいません。同じ名前のリポジトリがすでにあるときは、別の名前にします。
+   - 次の3つを入れます。
+     - `GATE_PASSWORD`：3.で決めた合言葉
+     - `GEMINI_API_KEY`：1.で作ったキー
+     - `ANTHROPIC_API_KEY`：2.で作ったキー
+   - `DAILY_ANSWER_LIMIT`・`DAILY_YEN_LIMIT`・`DAILY_SPEECH_LIMIT`は、アプリの中の1日の上限です（[お金のこと](#お金のこと)）。空欄なら既定の値（300回・約50円・100回）になります。入れられる最大は、それぞれ5000・10000・2000です。
+   - `RATE_ANSWER_PER_MINUTE`・`RATE_SPEECH_PER_MINUTE`と、ビルド・デプロイ・プレビューのコマンドは、表示されたままにします。
+4. ビルドが終わると、自分専用のURL（`https://<プロジェクト名>.<あなたのサブドメイン>.workers.dev`）ができます。開いて合言葉で入ると、そのまま練習の画面になります（名前の入力はありません）。マイクを許可します。
+5. スマホでは**ホーム画面に追加**できます（iPhoneは共有メニュー、AndroidのChromeは ⋮ のメニュー）。
+6. **GitHubの権限を絞ります。**GitHubの Settings → Applications →「Installed GitHub Apps」の「Cloudflare Workers and Pages」→「Configure」を開き、「Only select repositories」で今回作られたリポジトリだけを選んで保存します。ほかのリポジトリにCloudflareが触れなくなります。
 
 ### B. PCだけで使う：ローカルWebアプリ
 
