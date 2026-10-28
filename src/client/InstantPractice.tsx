@@ -3,12 +3,13 @@ import { audioSummary, inspectSpeechWav } from "../shared/audio.js";
 import { canConvertRecording, convertRecordingToWav } from "./recording.js";
 import { RequestError, apiFetch, request } from "./api.js";
 import { segmentPlan, type SegmentPlan } from "./lib/segment-plan.js";
-import { keyWarning } from "./strings.js";
+import { keyWarning, resetConfirm } from "./strings.js";
 import { FINISH_WAIT_HINT_MS, canSkip, correctionToShow, countResults, currentQuestion, initialRun, isMeaningOkBelowPass, isSettled, isTimeUp, mergeResults, nextKeyAction, pendingCount, remainingMs, remainingWholeSeconds, runReducer, type AudioSummary, type Outcome, type RecordedAttempt, type RunEvent, type RunQuestion, type RunState } from "./lib/instant-run.js";
 import { PASS_SCORE, QUESTION_COUNT_DEFAULT, QUESTION_COUNT_OPTIONS, QUESTION_SECONDS_DEFAULT, QUESTION_SECONDS_MAX, QUESTION_SECONDS_MIN, QUESTION_SECONDS_PRESETS, parseQuestionCount, parseQuestionSeconds, questionDurationMs, questionSecondsLabel, stepQuestionSeconds, type QuestionSeconds } from "../shared/instant-rules.js";
 import { TRIAL_SESSION_SIZE } from "../shared/trial-rules.js";
+import { idleMessage, refreshApplies, sessionProgressed, shouldRefresh, type RefreshMarks } from "./lib/refresh-policy.js";
 import { createSpeechCache, speechKey } from "./lib/speech-cache.js";
-import { endsOnLabel, msUntilJstMidnight, parseTrialInfo, trialBlockedMessage, trialNextCount, trialRemaining, type TrialInfo } from "./lib/trial-view.js";
+import { endsOnLabel, msUntilJstMidnight, parseTrialInfo, trialBlockedMessage, trialNextCount, trialRemaining, trialSpeechRemaining, type TrialInfo } from "./lib/trial-view.js";
 import { TRIAL } from "./strings.js";
 import { notifyUsageChanged } from "./usage-events.js";
 
@@ -48,6 +49,8 @@ function unscoredMessage(error: unknown): string {
 const keepKeyFlags = (next: Summary, previous: Summary | null): Summary => ({ ...next, geminiConfigured: previous?.geminiConfigured, claudeConfigured: previous?.claudeConfigured });
 const isActive = (phase: RunState["phase"]) => phase === "mic" || phase === "running" || phase === "paused" || phase === "finishing";
 const STOP_TEXT = "停止しました。送った答えの採点がそろったら、答え合わせを表示します。";
+const PROGRESSED_TEXT = "別の端末でこの出題が進みました。画面を最新にしました。スタートを押すと、残りがあれば続きから、終わっていれば新しい出題を始めます。";
+const SPEECH_USED_UP_TEXT = "今日の読み上げは使い切りました。一度聞いた文はこのページの間は再生できます。";
 const PAUSE_TEXT = "一時停止中です。録音と時間を止めています。「再開」で同じ問題の続きから始めます。";
 
 export default function InstantPractice({ onActiveChange, onMode, onTrial }: { onActiveChange?: (active: boolean) => void; onMode?: (mode: "solo" | "trial" | "trial-name") => void; onTrial?: (trial: TrialInfo | null) => void }) {
@@ -59,7 +62,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   const [finalizeFailed, setFinalizeFailed] = useState(false);
   const [history, setHistory] = useState<History | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [message, setMessage] = useState("学習記録を読み込んでいます。");
+  const [message, setMessageRaw] = useState("学習記録を読み込んでいます。");
   const [trial, setTrial] = useState<TrialInfo | null>(null); // お試しモードのときだけ入る（1人用は null のまま）
   const trialRef = useRef<TrialInfo | null>(null); // 古い closure から読むので正は ref
   const trialLoading = useRef(false); const trialAgain = useRef(false);
@@ -67,6 +70,8 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   const historySection = useRef<HTMLElement | null>(null); // 履歴は答え合わせの下に開くので、開いたらここまでスクロールする
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [playNote, setPlayNote] = useState<{ key: string; text: string } | null>(null); // 読み上げが断られたときの文を、押したボタンの横に出す
+  const [resuming, setResuming] = useState(false); const resumingRef = useRef(false); // 再開の前に status を確かめている間
   const runRef = useRef<RunState>(initialRun()); // 正はこちら。描画用に setRun で写す
   const runId = useRef(0); // 実行ごとに1増やす。遅れて届く処理はこれで捨てる
   const stream = useRef<MediaStream | null>(null);
@@ -87,7 +92,13 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   const wantedSeconds = useRef<QuestionSeconds>(QUESTION_SECONDS_DEFAULT); // 古い closure から読むので正は ref
   const wantedCount = useRef<number>(QUESTION_COUNT_DEFAULT);
   const saving = useRef(false); const saveAgain = useRef(false);
+  const lastStatusAt = useRef<number | null>(null); // 最後に状態を読み直した時刻
+  const statusLoading = useRef(false); const statusAgain = useRef(false);
+  const resultsRef = useRef<Results | null>(null); const busyRef = useRef(false); const resetting = useRef(false);
 
+  const msgSeq = useRef(0); const saveSeq = useRef(0); // 文・設定の保存の通し番号（読み直しの応答が、その間の変更を上書きしないため）
+  const setMessage = (text: string) => { msgSeq.current += 1; setMessageRaw(text); }; // 読み直し以外で文を変えるときは番号を進める
+  const marks = (): RefreshMarks => ({ message: msgSeq.current, run: runId.current, reset: resetVersion.current, save: saveSeq.current });
   const applyTrial = (value: TrialInfo | null) => { trialRef.current = value; if (mounted.current) { setTrial(value); onTrial?.(value); } };
   // お試しのときだけ、今日の残りなどを読み直す。同時には1つだけ（読み込み中に頼まれたら、終わった後に1回だけ）
   const refreshTrial = async () => {
@@ -99,6 +110,52 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       if (value && mounted.current) applyTrial(value);
     } catch { /* 読めなくても、次の機会に読み直す */ }
     finally { trialLoading.current = false; if (trialAgain.current && mounted.current) { trialAgain.current = false; void refreshTrial(); } }
+  };
+
+  // 別の端末で出題が進んでいたとき、この端末の一時停止中の出題を捨てて待機に戻す（区間は送らない。録音機のハンドラを先に外すので、onstop からの送信は起きない）
+  const returnToIdle = (value: Summary, info: TrialInfo | null) => {
+    const seg = segment.current; segment.current = null; stopTicker();
+    if (seg) { seg.done = true; seg.recorder.ondataavailable = null; seg.recorder.onstop = null; seg.recorder.onerror = null; if (seg.recorder.state !== "inactive") { try { seg.recorder.stop(); } catch { /* 止められなくてもトラックを止める */ } } }
+    releaseMic(); runId.current += 1; commit({ type: "abort" });
+    setSummary(value); if (info) applyTrial(info);
+    setMessage(PROGRESSED_TEXT);
+  };
+
+  // 戻ったときの読み直し（1人用・お試し共通）。状態と設定を読み直す。同時には1つだけ（読み込み中に頼まれたら、終わった後に1回だけ）
+  const refreshStatus = async () => {
+    const phase = runRef.current.phase;
+    if (phase !== "idle" && phase !== "done" && phase !== "paused") return; // 録音中・採点待ちは読まない
+    if (busyRef.current || resetting.current) return;
+    if (statusLoading.current) { statusAgain.current = true; return; }
+    statusLoading.current = true;
+    const start = marks();
+    try {
+      const value = await request<Summary>("/api/instant/status");
+      if (!mounted.current) return;
+      lastStatusAt.current = Date.now();
+      const nowPhase = runRef.current.phase;
+      if (nowPhase !== "idle" && nowPhase !== "done" && nowPhase !== "paused") return; // 読んでいる間に出題が始まった
+      const apply = refreshApplies(start, marks(), { saving: saving.current || saveAgain.current });
+      if (!apply.summary) return; // 読んでいる間に、出題・リセットがあった
+      const info = parseTrialInfo((value as { trial?: unknown }).trial);
+      if (nowPhase === "paused" && sessionProgressed(runRef.current, value.activeSession)) { returnToIdle(value, info ?? trialRef.current); return; } // 別の端末で進んだ出題は、その場で待機に戻す
+      setSummary(value);
+      if (info) applyTrial(info);
+      // 答え合わせを見ている途中・読んでいる間に変わった文（スタートの失敗など）は消さない
+      if (nowPhase === "idle" && !resultsRef.current && apply.message) setMessageRaw(idleMessage(value, info ?? trialRef.current));
+      if (nowPhase !== "paused" && !saving.current && !saveAgain.current) {
+        const settings = await request<{ questionSeconds?: unknown; questionCount?: unknown }>("/api/instant/settings");
+        if (!mounted.current || isActive(runRef.current.phase) || !refreshApplies(start, marks(), { saving: saving.current || saveAgain.current }).settings) return;
+        const seconds = parseQuestionSeconds(settings.questionSeconds); const count = parseQuestionCount(settings.questionCount);
+        if (seconds !== undefined) { wantedSeconds.current = seconds; setQuestionSeconds(seconds); }
+        if (count !== undefined) { wantedCount.current = count; setQuestionCount(count); }
+      }
+    } catch (error) {
+      if (!mounted.current) return;
+      if (error instanceof RequestError && error.status === 401) { location.replace("/login"); return; }
+      if (error instanceof RequestError && error.reason === "trial_name_required") onMode?.("trial-name");
+      // それ以外は読めなくても、次の機会に読み直す
+    } finally { statusLoading.current = false; if (statusAgain.current && mounted.current) { statusAgain.current = false; void refreshStatus(); } }
   };
 
   const commit = (event: RunEvent) => { runRef.current = runReducer(runRef.current, event); setRun(runRef.current); };
@@ -253,8 +310,26 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
     const now = performance.now();
     commit({ type: "pause", now }); setClock(now); setMessage(text);
   };
-  const resumeRun = () => {
-    if (runRef.current.phase !== "paused") return;
+  const resumeRun = async () => {
+    if (runRef.current.phase !== "paused" || resumingRef.current) return;
+    resumingRef.current = true; setResuming(true);
+    try {
+      const id = runId.current;
+      let value: Summary | null = null;
+      try { value = await request<Summary>("/api/instant/status"); }
+      catch (error) {
+        if (!mounted.current) return;
+        if (error instanceof RequestError && error.status === 401) { location.replace("/login"); return; }
+        if (error instanceof RequestError && error.reason === "trial_name_required") { onMode?.("trial-name"); return; }
+        // それ以外は読めなくても今までどおり再開する（サーバーが 409 で守る）
+      }
+      if (!mounted.current || id !== runId.current || runRef.current.phase !== "paused") return; // 読んでいる間に停止・リセットされた
+      if (value && sessionProgressed(runRef.current, value.activeSession)) { returnToIdle(value, parseTrialInfo((value as { trial?: unknown }).trial) ?? trialRef.current); return; }
+      if (document.visibilityState === "hidden") { setMessage("画面が裏に回ったため一時停止しました。「再開」で続けます。"); return; } // 確認を待つ間に裏へ回ったら、裏のまま走らせない
+      doResume();
+    } finally { resumingRef.current = false; if (mounted.current) setResuming(false); }
+  };
+  const doResume = () => {
     const seg = segment.current;
     if (seg?.recorder.state === "paused") { try { seg.recorder.resume(); } catch { stopRunWith("録音を再開できなかったため停止しました。答えた分の答え合わせを表示します。"); return; } }
     const now = performance.now();
@@ -277,6 +352,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
 
   // 保存は同時に1つだけ。保存中にまた変わったら、終わった後に最新の値で1回だけ保存し直す（順番が入れ替わって古い値が残るのを防ぐ）
   const saveSettings = async () => {
+    saveSeq.current += 1;
     if (saving.current) { saveAgain.current = true; return; }
     saving.current = true;
     try { await request("/api/instant/settings", { questionSeconds: wantedSeconds.current, questionCount: wantedCount.current }, "PUT"); if (mounted.current) setSettingsNote(""); }
@@ -312,6 +388,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
     if (!canConvertRecording()) { setMessage("このブラウザでは録音を採点用の形式（WAV）に変換できません。最新のChromeで開いてください。"); return; }
     // 日本語の読み上げがマイクに入って声と判定されないよう、再生中の音声を止めてから録音する。段階は await の前に同期で変える（二度押しを止める）
     stopSpeech();
+    setPlayNote(null);
     const id = ++runId.current; const version = resetVersion.current;
     finalizing.current = false; stopNote.current = ""; setFinalizeFailed(false);
     commit({ type: "request_mic" }); setResults(null); setShowHistory(false);
@@ -380,10 +457,8 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       setSummary(value);
       const info = parseTrialInfo((value as { trial?: unknown }).trial);
       if (info) { onMode?.("trial"); applyTrial(info); } else onMode?.("solo");
-      const blocked = info ? trialBlockedMessage(info) : null;
-      const pendingCountOfSession = value.activeSession?.pendingQuestionIds.length ?? 0;
-      setMessage(pendingCountOfSession ? `前回の出題が途中です。スタートすると、まだ答えていない${pendingCountOfSession}問から続けます。` : info ? "スタートすると録音が始まります。1問の時間は、上の欄で選べます（お試しは1回10問です）。" : "スタートすると録音が始まります。1問の時間と問題数は、上の欄で選べます。");
-      if (blocked) setMessage(blocked);
+      setMessage(idleMessage(value, info));
+      lastStatusAt.current = Date.now();
     }).catch((error) => {
       if (error instanceof RequestError && error.reason === "trial_name_required") { onMode?.("trial-name"); return; } // お試し：名前の登録がまだ
 
@@ -429,11 +504,26 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
 
   useEffect(() => { onActiveChange?.(isActive(run.phase)); }, [run.phase]);
 
-  // お試し：画面に戻ったとき・止まっている間に日本時間の0時が来たとき、今日の残りを読み直す
+  busyRef.current = busy; resultsRef.current = results;
+  // 戻ったときの読み直し：画面が見えるようになった・ページが復元された時は必ず、ウィンドウにフォーカスが戻った時は15秒以上、開きっぱなしで久しぶりの最初の操作は60秒以上たっていれば。定期的な読み直しはしない
   useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === "visible") void refreshTrial(); };
+    const due = (minMs: number) => shouldRefresh(lastStatusAt.current, Date.now(), minMs);
+    const onVisible = () => { if (document.visibilityState === "visible") void refreshStatus(); };
+    const onPageShow = () => { void refreshStatus(); };
+    const onFocus = () => { if (due(15_000)) void refreshStatus(); };
+    const onInput = () => { if (due(60_000)) void refreshStatus(); };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("pointerdown", onInput, true);
+    window.addEventListener("keydown", onInput, true);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("pointerdown", onInput, true);
+      window.removeEventListener("keydown", onInput, true);
+    };
   }, []);
   const stoppedToday = trial !== null && !trial.closed && trialBlockedMessage(trial) !== null;
   useEffect(() => {
@@ -459,11 +549,12 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
 
   const reset = async () => {
     if (isActive(runRef.current.phase)) return;
+    if (!window.confirm(resetConfirm(Boolean(trialRef.current)))) return; // 押しただけで消えないよう、一度確かめる
     resetVersion.current += 1;
-    stopSpeech(); setBusy(true);
+    stopSpeech(); setPlayNote(null); setBusy(true); resetting.current = true;
     try { const value = await request<Summary>("/api/instant/reset", {}); setSummary((previous) => (keepKeyFlags(value, previous))); commit({ type: "abort" }); setResults(null); setHistory(null); setShowHistory(false); speechCache.current.clear(); setMessage(`瞬間英作文の記録をすべてリセットしました。100問からやり直せます（${trialRef.current ? "1問の時間" : "1問の時間と問題数"}の設定はそのままです）。${trialRef.current ? TRIAL.resetNote : ""}`); void refreshTrial(); }
     catch (error) { setMessage(userMessage(error, "リセットできませんでした。")); }
-    finally { setBusy(false); }
+    finally { setBusy(false); resetting.current = false; }
   };
   const loadHistory = async () => {
     if (showHistory) { setShowHistory(false); return; }
@@ -474,8 +565,8 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   const play = async (questionId: string, attemptId?: string) => {
     if (isActive(runRef.current.phase)) return; // 実行中は読み上げを使わない（マイクに入るため）
     const key = speechKey(questionId, attemptId);
-    const version = resetVersion.current;
-    setPlaying(key);
+    const version = resetVersion.current; const playRun = runId.current;
+    setPlaying(key); setPlayNote(null);
     let called = false; // 本当に API を呼んだときだけ、利用料の帯とお試しの残りを読み直す
     try {
       let blob = speechCache.current.get(key); // 一度聞いた文は、API を呼ばずに鳴らす
@@ -497,9 +588,15 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       player.onended = () => { if (audioUrl.current === url) { URL.revokeObjectURL(url); audioUrl.current = null; } setPlaying(null); };
       player.onerror = () => { if (audioUrl.current === url) { URL.revokeObjectURL(url); audioUrl.current = null; } setPlaying(null); setMessage("音声を再生できませんでした。"); };
       await player.play();
-    } catch (error) { if (version === resetVersion.current) { setPlaying(null); setMessage(userMessage(error, "音声を再生できませんでした。")); } }
+    } catch (error) { if (version === resetVersion.current) { setPlaying(null); if (playRun === runId.current && !isActive(runRef.current.phase)) { const text = userMessage(error, "音声を再生できませんでした。"); setMessage(text); setPlayNote({ key, text }); } } }
     finally { if (called) { notifyUsageChanged(); void refreshTrial(); } }
   };
+
+  const playButton = (questionId: string, attemptId?: string) => {
+    const key = speechKey(questionId, attemptId);
+    return <><button className="quiet" disabled={Boolean(playing) || active} onClick={() => void play(questionId, attemptId)}>{playing === key ? "生成・再生中" : "▶ 再生"}</button>{playNote?.key === key && <span className="note play-note" role="status"> {playNote.text}</span>}</>;
+  };
+  const speechUsedUp = Boolean(trial) && trialSpeechRemaining(trial!) === 0;
 
   const settingsNoteText = settingsNote === "save"
     ? (trial ? "1問の時間を保存できませんでした。今回は選んだ設定で練習できますが、次に開いたときは前の設定に戻ることがあります。" : "1問の時間と問題数を保存できませんでした。今回は選んだ設定で練習できますが、次に開いたときは前の設定に戻ることがあります。")
@@ -535,7 +632,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   const nextCount = trial ? (summary ? trialNextCount(trial, summary.remaining) : TRIAL_SESSION_SIZE) : summary && summary.remaining > 0 ? Math.min(questionCount, summary.remaining) : questionCount;
 
   return <>
-    <section className="instant-overview"><div className="section-title"><div><p className="eyebrow">日常英会話・全100問</p><h2>瞬間英作文</h2></div><div className="title-actions"><button className="quiet" onClick={() => helpDialog.current?.showModal()} disabled={active} aria-haspopup="dialog">使い方</button><button className="quiet" onClick={() => void reset()} disabled={busy || active}>記録をリセット</button></div></div>
+    <section className="instant-overview"><div className="section-title"><div className="title-actions"><button className="quiet" onClick={() => helpDialog.current?.showModal()} disabled={active} aria-haspopup="dialog">使い方</button><button className="quiet" onClick={() => void reset()} disabled={busy || active}>記録をリセット</button></div></div>
       <div className="instant-stats"><span>クリア <strong>{summary?.cleared ?? "–"} / 100</strong></span><span>未クリア <strong>{summary?.remaining ?? "–"}</strong></span><span>回答記録 <strong>{summary?.attempts ?? "–"} 件</strong></span>{trial ? <span>今日の回答 <strong>{TRIAL.todayAnswers(trial.questionsUsed, trial.questionsLimit)}</strong></span> : typeof summary?.todayAttempts === "number" && <span>今日の回答 <strong>{summary.todayAttempts} 件</strong></span>}{summary && summary.todayAverage !== undefined && <span>今日の平均 <strong>{scoreText(summary.todayAverage)}</strong></span>}{summary && summary.averageScore !== undefined && <span>全体の平均 <strong>{scoreText(summary.averageScore)}</strong></span>}</div>
       {missingKeys.length > 0 && <p className="instant-warning">{keyWarning(missingKeys)}</p>}
       {summary?.providerBlock && <p className="instant-warning" role="status">{summary.providerBlock.message}（しばらくは呼び出しを止めています。）</p>}
@@ -592,7 +689,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
             <li>1日{trial.questionsLimit}問まで答えられます。1回は10問で、今日の残りが10問より少ない日は残りの数だけ出ます。</li>
             <li>読み上げは1日{trial.speechLimit}回までです。一度再生した文は、このページを開いている間は何度でも聞けます。</li>
             <li>数は日本時間の0時に戻ります。「記録をリセット」しても、今日の問題数と読み上げの回数は戻りません。</li>
-            <li>名前はこのブラウザの cookie と結び付いています。cookie を消したり別のブラウザで開いたりすると、同じ名前では入れません。</li>
+            <li>別の端末や別のブラウザで使うときは、合言葉のあと、名前と「引き継ぎ番号」（右上のボタンで見られます）を入れると同じ記録で続けられます。2台で同時には使わないでください。</li>
             {trial.endsOn && <li>お試しは{endsOnLabel(trial.endsOn)}までです。</li>}
           </ul></>}
           <p className="help-foot"><button type="button" onClick={() => helpDialog.current?.close()}>閉じる</button></p>
@@ -607,7 +704,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       <progress max={limitSeconds * 1000} value={remainingMs(run.countdown, clock)} aria-label="残り時間" />
       {run.phase === "running"
         ? <><button onClick={skipToNext} disabled={!canSkip(run, clock)} aria-keyshortcuts="Tab">次へ（Tab）</button><button onClick={() => pauseRun()}>一時停止</button><span className="record-live" role="status">録音中</span></>
-        : <><button onClick={resumeRun}>再開</button><span className="instant-paused" role="status">一時停止中</span></>}
+        : <><button onClick={() => void resumeRun()} disabled={resuming}>再開</button><span className="instant-paused" role="status">一時停止中</span></>}
       <button className="record-stop" onClick={() => stopRunWith(STOP_TEXT)}>停止</button>
       <p className="note">英語で答えてください。答え終わったら Tab キーか「次へ」で次の問題へ進めます（{limitSeconds}秒たつと自動で進みます）。その問題の声を採点に送ります。答え合わせは最後にまとめて表示します。{pending ? ` 採点中 ${pending}件` : ""}</p>
     </section>}
@@ -620,6 +717,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
     </section>}
 
     {results && <section className="instant-results"><div className="section-title"><h2>答え合わせ</h2>{!trialBlocked && <button onClick={() => void startRun()} disabled={startDisabled || active}>次の{nextCount}問を始める</button>}{trialBlocked && <span className="note trial-blocked">{trialBlocked}</span>}</div>
+      {speechUsedUp && <p className="note">{SPEECH_USED_UP_TEXT}</p>}
       <p>{counts.recorded ? `${counts.recorded}問を記録 · 合格 ${counts.passed}問 · 平均 ${counts.averageScore}点` : "記録した回答はありません"}{counts.unscored ? ` · 未採点 ${counts.unscored}問` : ""}{results.endedReason === "stopped" ? "（途中で停止）" : ""}{results.questionSeconds !== undefined ? ` · 1問の時間 ${questionSecondsLabel(results.questionSeconds)}` : ""}</p>
       {!rows.length && <p>答えた問題はありません。</p>}
       <ol>{rows.map((row) => {
@@ -630,8 +728,8 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
             <p className={item.passed ? "pass" : "fail"}>{item.passed ? "合格" : "不合格"} · {item.score}点（意味 {item.meaningScore} / 80、文法 {item.grammarScore} / 20） · 連続 {item.consecutivePasses} / 3</p>
             {isMeaningOkBelowPass(item) && <p className="instant-near-pass">意味は伝わっていますが、合計が{PASS_SCORE}点に届かなかったため不合格です。{fix ? "「あなたの文を直すと」と「文法・言い方」を見てください。" : "「文法・言い方」と模範文を見てください。"}</p>}
             <p>あなたの回答：<span lang="en">{item.transcript}</span></p>
-            <p className="model-answer"><span className="model-answer-label">模範文</span><span lang="en">{row.question.referenceAnswer}</span> <button className="quiet" disabled={Boolean(playing) || active} onClick={() => void play(row.question.id)}>{playing === `${row.question.id}:reference` ? "生成・再生中" : "▶ 再生"}</button></p>
-            {fix && <p>あなたの文を直すと：<span lang="en">{fix}</span> <button className="quiet" disabled={Boolean(playing) || active} onClick={() => void play(row.question.id, item.id)}>{playing === `${row.question.id}:${item.id}` ? "生成・再生中" : "▶ 再生"}</button></p>}
+            <p className="model-answer"><span className="model-answer-label">模範文</span><span lang="en">{row.question.referenceAnswer}</span> {playButton(row.question.id)}</p>
+            {fix && <p>あなたの文を直すと：<span lang="en">{fix}</span> {playButton(row.question.id, item.id)}</p>}
             <p>意味の評価：{item.reasonJa}</p>
             <p>文法・言い方：{item.grammarFeedbackJa || "大きな修正はありません。"}</p>
           </>}
@@ -639,13 +737,13 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
             <p className="fail">不合格 · 0点 · {item.reasonJa || "時間内に回答がありませんでした。"} 連続 {item.consecutivePasses} / 3</p>
             <p>あなたの回答：（なし）</p>
             {row.audio && <p className="note">声として数えた長さ {row.audio.voicedSec}秒（合計0.3秒以上で回答として扱います）</p>}
-            <p className="model-answer"><span className="model-answer-label">模範文</span><span lang="en">{row.question.referenceAnswer}</span> <button className="quiet" disabled={Boolean(playing) || active} onClick={() => void play(row.question.id)}>{playing === `${row.question.id}:reference` ? "生成・再生中" : "▶ 再生"}</button></p>
+            <p className="model-answer"><span className="model-answer-label">模範文</span><span lang="en">{row.question.referenceAnswer}</span> {playButton(row.question.id)}</p>
           </>}
           {row.status === "unscored" && <>
             <p className="instant-unscored">採点できませんでした（記録は変えていません）</p>
             <p className="note">{row.message}</p>
             {row.transcript && <p>聞き取った回答：<span lang="en">{row.transcript}</span></p>}
-            <p className="model-answer"><span className="model-answer-label">模範文</span><span lang="en">{row.question.referenceAnswer}</span> <button className="quiet" disabled={Boolean(playing) || active} onClick={() => void play(row.question.id)}>{playing === `${row.question.id}:reference` ? "生成・再生中" : "▶ 再生"}</button></p>
+            <p className="model-answer"><span className="model-answer-label">模範文</span><span lang="en">{row.question.referenceAnswer}</span> {playButton(row.question.id)}</p>
           </>}
         </li>;
       })}</ol>

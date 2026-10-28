@@ -5,3 +5,6 @@ export const NAME_TAKEN_MESSAGE: string;
 export function normalizeDisplayName(input: unknown): string | null;
 export function nameKey(display: string): string;
 export function isNameKey(value: unknown): value is string;
+export const NAME_REQUIRED_MESSAGE: string;
+export const LINK_CODE_DIGITS: 6;
+export function normalizeLinkCode(input: unknown): string | null;

@@ -7,7 +7,7 @@ import { createClaude, ClaudeError } from "../ai/claude";
 import { createGemini, GeminiError } from "../ai/gemini";
 import { clientKey } from "../gate/policy";
 import { USER_KEY_HEADER, decodeUserKey } from "../gate/user-token";
-import { TRIAL_SESSION_SIZE } from "../../shared/trial-rules.js";
+import { NAME_REQUIRED_MESSAGE as NAME_REQUIRED, TRIAL_SESSION_SIZE } from "../../shared/trial-rules.js";
 import { guardConfig, type GuardEnv } from "../guard/config";
 import { checkAnswerCapacity, dailyLimitMessage, dailyState, reserveDaily, type DailyLimit } from "../guard/daily-limits";
 import { BLOCKING_REASONS, createProviderBlocker, type Provider, type ProviderBlock } from "../guard/provider-block";
@@ -47,7 +47,6 @@ export const DEFAULT_BODY_LIMIT = 61_440;
 const SEGMENT_ENDS = new Set(["timeout", "next", "stopped"]);
 // 答える時間が終わった区間（1問の時間切れ・Tab や「次へ」で進んだ）。声が無ければ「回答なし」の不合格にする
 const WINDOW_CLOSED = new Set(["timeout", "next"]);
-const NAME_REQUIRED = "お試しに参加する名前が登録されていません。ページを再読み込みして、名前を入れてください。";
 const NOT_ANSWERABLE = { error: "この問題の回答は受け付けられません（記録済み、または出題が終わりました）。画面を更新してください。", reason: "not_answerable" };
 
 export function createInstantApi(d: InstantApiDeps): Hono {

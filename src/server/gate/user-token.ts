@@ -53,3 +53,15 @@ export async function verifyUserToken(secret: string, token: string | null | und
   if (!equalBytes(await mac(secret, issuedAtText, b64), fromHex(sig))) return null;
   return decodeKeyText(b64);
 }
+
+/** 引き継ぎ番号（6桁）。HMAC-SHA256(秘密, "app_user.link.v1." + base64url(鍵)) の先頭4バイトを 1,000,000 で割った余り。DB には持たない */
+export async function linkCode(secret: string, key: string): Promise<string> {
+  const k = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(`app_user.link.v1.${encodeUserKey(key)}`)));
+  const n = new DataView(sig.buffer, sig.byteOffset, 4).getUint32(0, false);
+  return String(n % 1_000_000).padStart(6, "0");
+}
+/** 入力（半角6桁）が名前の鍵の番号と合うか。時間一定で比べる */
+export async function linkCodeMatches(secret: string, key: string, input: string): Promise<boolean> {
+  return equalBytes(enc.encode(await linkCode(secret, key)), enc.encode(input));
+}

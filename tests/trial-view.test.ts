@@ -39,7 +39,7 @@ test("msUntilJstMidnight：日本時間の0時（UTC 15:00）まで", () => {
 test("帯の文", () => {
   assert.equal(trialBarText(with_({ questionsUsed: 5, speechUsed: 1, endsOn: "2026-10-21" })), "Mikaさん・今日の残り 25問・読み上げ残り 4回・10月21日まで");
   assert.equal(trialBarText(base), "Mikaさん・今日の残り 30問・読み上げ残り 5回");
-  assert.match(trialBarText(with_({ dailyDone: true })), /今日のお試しは終了しました/);
+  assert.equal(trialBarText(with_({ questionsUsed: 30, speechUsed: 5, dailyDone: true })), "Mikaさん・今日の残り 0問・読み上げ残り 0回");
   assert.equal(trialBarText(with_({ closed: true })), "お試し期間は終わりました");
   assert.equal(endsOnLabel("2026-01-05"), "1月5日");
 });

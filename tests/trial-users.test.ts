@@ -6,7 +6,7 @@ import { migratedDb } from "./helpers/sqlite";
 
 const NOW = Date.UTC(2026, 9, 22, 3, 0, 0);
 const cfg = trialConfig({ TRIAL_MODE: "1", TRIAL_ENDS_ON: "2026-10-30" });
-const TAKEN = "その名前はすでに使われています。別の名前にしてください。";
+const TAKEN = "その名前はすでに登録されています。あなたの名前なら、引き継ぎ番号（6桁）を入れてください。ほかの人の名前なら、別の名前にしてください。";
 
 test("新しい名前は ok で、users に1行入る", () => {
   const db = migratedDb(NOW);
@@ -53,4 +53,20 @@ test("同じ名前を2回続けて登録すると、2回目は name_taken", () =
   const db = migratedDb(NOW);
   assert.equal(registerUser(db, cfg, "Same", null, NOW).ok, true);
   assert.equal(registerUser(db, cfg, "Same", null, NOW).reason, "name_taken");
+});
+
+test("resume（引き継ぎ番号が合った）なら別の currentKey でも ok。表示名はそのまま・last_seen_at だけ更新。resume なしは name_taken", () => {
+  const db = migratedDb(NOW);
+  registerUser(db, cfg, "Mika", null, NOW);
+  const created = String(db.all("SELECT created_at FROM users WHERE user_key = 'mika'")[0]?.created_at);
+  const r = registerUser(db, cfg, " MIKA ", null, NOW + 60_000, true);
+  assert.deepEqual(r, { ok: true, key: "mika", displayName: "Mika" });
+  const row = db.all("SELECT display_name, created_at, last_seen_at FROM users WHERE user_key = 'mika'")[0];
+  assert.equal(row?.display_name, "Mika");
+  assert.equal(row?.created_at, created);
+  assert.notEqual(row?.last_seen_at, created);
+  assert.equal(registerUser(db, cfg, "Mika", "alice", NOW, true).ok, true);
+  assert.equal(registerUser(db, cfg, "Mika", "alice", NOW, false).reason, "name_taken");
+  // 未登録の名前は resume でも新しく作る（Worker 側で番号が合わなければ、ここへ来ない）
+  assert.equal(registerUser(db, cfg, "Newbie", null, NOW, true).ok, true);
 });

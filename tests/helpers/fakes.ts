@@ -43,8 +43,8 @@ export function fakePractice(db: Db, now: () => number, env: Record<string, stri
     attempts,
     requests,
     userKeys,
-    async trialRegister(name: string, currentKey: string | null) {
-      return registerUser(db, trialConfig(env), name, currentKey, now());
+    async trialRegister(name: string, currentKey: string | null, resume: boolean) {
+      return registerUser(db, trialConfig(env), name, currentKey, now(), resume);
     },
     async trialParticipants() {
       return trialParticipantsReport(db, env, now());
@@ -55,9 +55,9 @@ export function fakePractice(db: Db, now: () => number, env: Record<string, stri
       fetched.push(`${req.method} ${new URL(req.url).pathname}`);
       return api.fetch(req);
     },
-    async loginAttempt(key: string, ok: boolean) {
+    async loginAttempt(key: string, ok: boolean, clearOnOk = true) {
       attempts.push({ key, ok });
-      return loginAttempt(db, key, ok, now());
+      return loginAttempt(db, key, ok, now(), undefined, clearOnOk);
     },
   };
 }

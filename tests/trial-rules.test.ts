@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isNameKey, nameKey, normalizeDisplayName } from "../src/shared/trial-rules.js";
+import { isNameKey, nameKey, normalizeDisplayName, normalizeLinkCode } from "../src/shared/trial-rules.js";
 import { base64UrlToBytes, bytesToBase64Url } from "../src/server/bytes";
 
 test("名前は前後の空白を除き、鍵は小文字になる", () => {
@@ -77,4 +77,13 @@ test("登録できる名前の鍵は、いつも isNameKey を通る（登録で
     if (display === null) continue;
     assert.equal(isNameKey(nameKey(display)), true, JSON.stringify(name));
   }
+});
+
+test("引き継ぎ番号：半角・全角の6桁は通り、5桁・7桁・空白混じり・数字以外・文字でない値は null", () => {
+  assert.equal(normalizeLinkCode("123456"), "123456");
+  assert.equal(normalizeLinkCode("１２３４５６"), "123456");
+  assert.equal(normalizeLinkCode(" 012345 "), "012345");
+  assert.equal(normalizeLinkCode("123 456"), "123456");
+  assert.equal(normalizeLinkCode("１２３　４５６"), "123456");
+  for (const bad of ["12345", "1234567", "12 345", "12345a", "", "١٢٣٤٥٦", 123456, null, undefined]) assert.equal(normalizeLinkCode(bad), null, String(bad));
 });

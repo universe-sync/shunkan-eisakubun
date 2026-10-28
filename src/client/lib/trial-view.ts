@@ -37,7 +37,6 @@ export const endsOnLabel = (endsOn: string): string => `${Number(endsOn.slice(5,
 /** 画面の上の帯の文 */
 export function trialBarText(t: TrialInfo): string {
   if (t.closed) return "お試し期間は終わりました";
-  if (t.dailyDone) return `${t.name}さん・${TRIAL_DAILY_DONE_TEXT.replace(/。$/, "")}`;
   const until = t.endsOn ? `・${endsOnLabel(t.endsOn)}まで` : "";
   return `${t.name}さん・今日の残り ${trialRemaining(t)}問・読み上げ残り ${trialSpeechRemaining(t)}回${until}`;
 }

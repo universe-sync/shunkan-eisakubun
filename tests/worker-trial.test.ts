@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createWorkerApp, type WorkerEnv } from "../src/server/app";
-import { USER_KEY_HEADER, issueUserToken } from "../src/server/gate/user-token";
+import { USER_KEY_HEADER, issueUserToken, linkCode } from "../src/server/gate/user-token";
 import { issueToken, resolveCookieSecret } from "../src/server/gate/token";
 import { forbidNetwork } from "./helpers/no-network";
 import { fakeAssets, fakePractice, INDEX_HTML } from "./helpers/fakes";
@@ -15,7 +15,7 @@ const PW = "仮の合言葉-test-1234567";
 const SECRET = "t".repeat(40);
 const H = "https://speak25.example.workers.dev";
 const XJ = { "X-App": "1", "Content-Type": "application/json" };
-const TAKEN = "その名前はすでに使われています。別の名前にしてください。";
+const TAKEN = "その名前はすでに登録されています。あなたの名前なら、引き継ぎ番号（6桁）を入れてください。ほかの人の名前なら、別の名前にしてください。";
 
 function setup(trial: boolean, extra: Partial<WorkerEnv> = {}) {
   const db = migratedDb(NOW);
@@ -43,7 +43,9 @@ test("正しい名前は 200 で app_user を出す（HttpOnly・Secure・SameSi
   const s = setup(true);
   const res = await s.post("/trial/name", { name: " Mika " }, await s.gate());
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, name: "Mika" });
+  const registered = await res.json();
+  assert.deepEqual(registered, { ok: true, name: "Mika", code: await linkCode(SECRET, "mika") });
+  assert.match(registered.code, /^\d{6}$/);
   assert.equal(res.headers.get("Cache-Control"), "no-store");
   const c = userCookie(res) as string;
   assert.match(c, /^app_user=u1\./);
@@ -233,4 +235,132 @@ test("管理用ページ：お試しのときは index.html（private, no-cache�
   assert.equal(res.headers.get("Cache-Control"), "private, no-cache");
   const gated = await s.send("/trial/admin");
   assert.equal(gated.status, 302);
+});
+
+test("引き継ぎ番号：/trial/code は登録済みの人に同じ番号を返し、cookie なしは 403、1人用は未知の POST と同じ 405", async () => {
+  const s = setup(true);
+  const g = await s.gate();
+  const reg = await s.post("/trial/name", { name: "Mika" }, g);
+  const { code } = await reg.json();
+  const pair = cookiePair(userCookie(reg) as string);
+  const res = await s.post("/trial/code", {}, `${g}; ${pair}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await res.json(), { ok: true, code });
+  const none = await s.post("/trial/code", {}, g);
+  assert.equal(none.status, 403);
+  assert.equal((await none.json()).reason, "trial_name_required");
+  const solo = setup(false);
+  const probe = await solo.post("/nothing", {}, await solo.gate());
+  const soloRes = await solo.post("/trial/code", {}, await solo.gate());
+  assert.equal(soloRes.status, 405);
+  assert.deepEqual(await soloRes.json(), await probe.json());
+});
+
+test("引き継ぎ番号：同じ名前は番号なしなら 409、正しい番号（全角でも）なら 200 で app_user が出て、その cookie で同じ鍵が DO に届く", async () => {
+  const s = setup(true);
+  const g = await s.gate();
+  const first = await s.post("/trial/name", { name: "Mika" }, g);
+  const { code } = await first.json();
+  const noCode = await s.post("/trial/name", { name: "mika" }, g);
+  assert.equal(noCode.status, 409);
+  assert.equal(userCookie(noCode), null);
+  const emptyCode = await s.post("/trial/name", { name: "mika", code: "" }, g);
+  assert.equal(emptyCode.status, 409);
+  const wide = String(code).replace(/\d/g, (d: string) => String.fromCharCode(0xff10 + Number(d)));
+  for (const sent of [code, wide]) {
+    const res = await s.post("/trial/name", { name: "MIKA", code: sent }, g);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, name: "Mika", code });
+    const c = userCookie(res) as string;
+    assert.match(c, /^app_user=u1\./);
+    const status = await s.send("/api/instant/status", { headers: { Cookie: `${g}; ${cookiePair(c)}` } });
+    assert.equal(status.status, 200);
+    assert.equal(s.practice.userKeys.at(-1), "mika");
+  }
+  assert.deepEqual(s.practice.attempts.map((a) => a.ok), [true, true]);
+});
+
+test("引き継ぎ番号：違う番号は 403 wrong_code（失敗として数える）。5回で番号は 429、同じ IP の /login は 429 にならない。正しい番号は ok:true", async () => {
+  const s = setup(true);
+  const g = await s.gate();
+  const { code } = await (await s.post("/trial/name", { name: "Mika" }, g)).json();
+  const wrong = String(code).slice(0, 5) + (String(code).endsWith("0") ? "1" : "0");
+  for (let i = 0; i < 5; i += 1) {
+    const res = await s.post("/trial/name", { name: "Mika", code: wrong }, g);
+    assert.equal(res.status, 403, `${i}`);
+    assert.deepEqual(await res.json(), { error: "名前か引き継ぎ番号が違います。", reason: "wrong_code" });
+    assert.equal(userCookie(res), null);
+  }
+  assert.deepEqual(s.practice.attempts.map((a) => a.ok), [false, false, false, false, false]);
+  assert.ok(s.practice.attempts.every((a) => a.key.startsWith("code:")));
+  const limited = await s.post("/trial/name", { name: "Mika", code }, g);
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).reason, "limited");
+  assert.equal(userCookie(limited), null);
+  const login = await s.send("/login", { method: "POST", headers: { ...XJ }, body: JSON.stringify({ password: PW }) });
+  assert.equal(login.status, 200); // 番号の失敗は別の鍵なので、同じ IP の /login は止まらない
+});
+
+test("引き継ぎ番号：正しい合言葉で /login しても番号の失敗は消えず、次の番号の試みも 429 のまま。全体の上限には番号の失敗も数える", async () => {
+  const s = setup(true);
+  const g = await s.gate();
+  const { code } = await (await s.post("/trial/name", { name: "Mika" }, g)).json();
+  const wrong = String(code).slice(0, 5) + (String(code).endsWith("0") ? "1" : "0");
+  for (let i = 0; i < 5; i += 1) await s.post("/trial/name", { name: "Mika", code: wrong }, g);
+  const login = await s.send("/login", { method: "POST", headers: { ...XJ }, body: JSON.stringify({ password: PW }) });
+  assert.equal(login.status, 200);
+  assert.equal((await s.post("/trial/name", { name: "Mika", code }, g)).status, 429);
+  const rows = s.db.all("SELECT client_key FROM login_failures");
+  assert.equal(rows.length, 5);
+  assert.ok(rows.every((r) => String(r.client_key).startsWith("code:")));
+  // 全体の上限（30）には番号の失敗も入る：別の IP の /login が、番号の失敗の分だけ早く止まる
+  for (let i = 0; i < 25; i += 1) {
+    await s.send("/login", { method: "POST", headers: { ...XJ, "CF-Connecting-IP": `10.0.0.${i}` }, body: JSON.stringify({ password: "違う合言葉" }) });
+  }
+  const blocked = await s.send("/login", { method: "POST", headers: { ...XJ, "CF-Connecting-IP": "10.0.1.1" }, body: JSON.stringify({ password: "違う合言葉" }) });
+  assert.equal(blocked.status, 429);
+});
+
+test("引き継ぎ番号：未登録の名前に番号を付けると 403 wrong_code（登録されない）。33字以上・数字以外は 400 bad_code で cookie なし", async () => {
+  const s = setup(true);
+  const g = await s.gate();
+  const unknown = await s.post("/trial/name", { name: "Ghost", code: "123456" }, g);
+  assert.equal(unknown.status, 403);
+  assert.equal((await unknown.json()).reason, "wrong_code");
+  assert.equal((await s.post("/trial/name", { name: "Ghost" }, g)).status, 200); // 番号を消せば登録できる
+  for (const code of ["1".repeat(33), "12345", "12345a", 123456, {}]) {
+    const res = await s.post("/trial/name", { name: "Mika", code }, g);
+    assert.equal(res.status, 400, JSON.stringify(code));
+    assert.deepEqual(await res.json(), { error: "引き継ぎ番号は6桁の数字です。", reason: "bad_code" });
+    assert.equal(userCookie(res), null);
+  }
+});
+
+test("引き継ぎ番号：管理一覧の各参加者に code が付き、key は出さない", async () => {
+  const s = setup(true, { TRIAL_ADMIN_TOKEN: ADMIN });
+  const g = await s.gate();
+  const { code } = await (await s.post("/trial/name", { name: "Mika" }, g)).json();
+  const body = await (await adminCall(s, ADMIN, g)).json();
+  assert.equal(body.participants[0].code, code);
+  assert.equal("key" in body.participants[0], false);
+});
+
+test("引き継ぎ番号：他人の名前で違う番号を4回 → 自分の名前で正しい番号を1回、を繰り返しても失敗は消えず、いずれ 429（文は番号用）", async () => {
+  const s = setup(true);
+  const g = await s.gate();
+  const { code } = await (await s.post("/trial/name", { name: "Mika" }, g)).json();
+  await s.post("/trial/name", { name: "Alice" }, g);
+  const wrong = String(code).slice(0, 5) + (String(code).endsWith("0") ? "1" : "0");
+  let last: Response | null = null;
+  for (let round = 0; round < 3; round += 1) {
+    for (let i = 0; i < 4; i += 1) last = await s.post("/trial/name", { name: "Alice", code: wrong }, g);
+    last = await s.post("/trial/name", { name: "Mika", code }, g);
+    if (last.status === 429) break;
+  }
+  assert.equal((last as Response).status, 429);
+  const body = await (last as Response).json();
+  assert.equal(body.reason, "limited");
+  assert.match(body.error, /^引き継ぎ番号の間違いが続いたため、しばらく入れません。約\d+分後に試してください。$/);
+  assert.equal(s.db.all("SELECT client_key FROM login_failures").length >= 5, true);
 });

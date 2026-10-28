@@ -4,7 +4,7 @@ import { apiFetch } from "./api.js";
 import { formatYen } from "./lib/usage-format.js";
 import { TRIAL } from "./strings.js";
 
-type Participant = { name: string; todayQuestions: number; totalQuestions: number; todaySpeech: number; lastSeenAt: string; createdAt: string };
+type Participant = { name: string; code: string; todayQuestions: number; totalQuestions: number; todaySpeech: number; lastSeenAt: string; createdAt: string };
 type Report = { date: string; todayJpy: number; daily: { answers: { used: number; limit: number }; speech: { used: number; limit: number }; yen: { used: number; limit: number } }; participants: Participant[] };
 const when = (iso: string): string => new Date(iso).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 
@@ -48,8 +48,8 @@ export default function TrialAdmin() {
     {report && <section>
       <p className="note">{report.date}（日本時間）の全員の合計：利用料の目安 {formatYen(report.todayJpy)}（上限 {report.daily.yen.limit}円）・採点 {report.daily.answers.used} / {report.daily.answers.limit}回・読み上げ {report.daily.speech.used} / {report.daily.speech.limit}回</p>
       {report.participants.length === 0 ? <p>{TRIAL.adminEmpty}</p> : <div className="trial-admin-scroll"><table>
-        <thead><tr><th>名前</th><th>今日の問題</th><th>累計の問題</th><th>今日の読み上げ</th><th>最後に使った日時</th><th>登録日時</th></tr></thead>
-        <tbody>{report.participants.map((p) => <tr key={p.name + p.createdAt}><td>{p.name}</td><td>{p.todayQuestions}</td><td>{p.totalQuestions}</td><td>{p.todaySpeech}</td><td>{when(p.lastSeenAt)}</td><td>{when(p.createdAt)}</td></tr>)}</tbody>
+        <thead><tr><th>名前</th><th>{TRIAL.adminCode}</th><th>今日の問題</th><th>累計の問題</th><th>今日の読み上げ</th><th>最後に使った日時</th><th>登録日時</th></tr></thead>
+        <tbody>{report.participants.map((p) => <tr key={p.name + p.createdAt}><td>{p.name}</td><td>{p.code}</td><td>{p.todayQuestions}</td><td>{p.totalQuestions}</td><td>{p.todaySpeech}</td><td>{when(p.lastSeenAt)}</td><td>{when(p.createdAt)}</td></tr>)}</tbody>
       </table></div>}
     </section>}
   </main>;

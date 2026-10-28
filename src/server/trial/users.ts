@@ -9,8 +9,8 @@ export interface TrialRegisterResult { ok: boolean; reason?: "bad_name" | "name_
 
 export const TRIAL_CLOSED_MESSAGE = "お試し期間は終わりました。ご協力ありがとうございました。";
 
-/** 名前を登録する。同じ鍵で currentKey も同じなら（二度押し・読み込み直し）そのまま ok。ほかの人が使っている鍵は name_taken */
-export function registerUser(db: Db, cfg: TrialConfig, input: unknown, currentKey: string | null, now: number): TrialRegisterResult {
+/** 名前を登録する。同じ鍵で currentKey も同じなら（二度押し・読み込み直し）、または resume（引き継ぎ番号が合った）ならそのまま ok。ほかの人が使っている鍵は name_taken */
+export function registerUser(db: Db, cfg: TrialConfig, input: unknown, currentKey: string | null, now: number, resume = false): TrialRegisterResult {
   if (!cfg.enabled) return { ok: false, reason: "trial_off" };
   if (trialClosed(cfg, now)) return { ok: false, reason: "trial_closed", message: TRIAL_CLOSED_MESSAGE };
   const display = normalizeDisplayName(input);
@@ -20,7 +20,7 @@ export function registerUser(db: Db, cfg: TrialConfig, input: unknown, currentKe
     const row = db.all("SELECT display_name FROM users WHERE user_key = ?", key)[0];
     const at = isoMillis(now);
     if (row) {
-      if (key !== currentKey) return { ok: false, reason: "name_taken", message: NAME_TAKEN_MESSAGE };
+      if (key !== currentKey && !resume) return { ok: false, reason: "name_taken", message: NAME_TAKEN_MESSAGE };
       db.run("UPDATE users SET last_seen_at = ? WHERE user_key = ?", at, key);
       return { ok: true, key, displayName: String(row.display_name) };
     }
@@ -78,13 +78,13 @@ export function speechGate(db: Db, cfg: TrialConfig, key: string): UserGate {
   };
 }
 
-export interface TrialParticipant { name: string; todayQuestions: number; totalQuestions: number; todaySpeech: number; lastSeenAt: string; createdAt: string }
+export interface TrialParticipant { key: string; name: string; todayQuestions: number; totalQuestions: number; todaySpeech: number; lastSeenAt: string; createdAt: string }
 export function listParticipants(db: Db, now: number): TrialParticipant[] {
   return db.all(
-    `SELECT u.display_name, u.created_at, u.last_seen_at,
+    `SELECT u.user_key, u.display_name, u.created_at, u.last_seen_at,
   COALESCE(t.answers, 0) AS today_answers, COALESCE(t.speech, 0) AS today_speech,
   (SELECT COALESCE(SUM(a.answers), 0) FROM trial_daily a WHERE a.user_key = u.user_key) AS total_answers
 FROM users u LEFT JOIN trial_daily t ON t.user_key = u.user_key AND t.day = ?
 ORDER BY u.created_at, u.user_key`, jstDate(now),
-  ).map((r) => ({ name: String(r.display_name), todayQuestions: Number(r.today_answers), totalQuestions: Number(r.total_answers), todaySpeech: Number(r.today_speech), lastSeenAt: String(r.last_seen_at), createdAt: String(r.created_at) }));
+  ).map((r) => ({ key: String(r.user_key), name: String(r.display_name), todayQuestions: Number(r.today_answers), totalQuestions: Number(r.total_answers), todaySpeech: Number(r.today_speech), lastSeenAt: String(r.last_seen_at), createdAt: String(r.created_at) }));
 }

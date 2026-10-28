@@ -5,10 +5,10 @@ import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { secureHeaders } from "hono/secure-headers";
 import type { LoginDecision } from "./gate/limit";
-import { NAME_RULE_MESSAGE } from "../shared/trial-rules.js";
+import { NAME_REQUIRED_MESSAGE, NAME_RULE_MESSAGE, nameKey, normalizeDisplayName, normalizeLinkCode } from "../shared/trial-rules.js";
 import { MAX_PASSWORD_LENGTH, passwordMatches } from "./gate/password";
 import { ICON_PATHS, clientKey, cookieSecure, gateExempt, gatePassword, isConfigured, isLoopbackHost } from "./gate/policy";
-import { USER_COOKIE, USER_KEY_HEADER, USER_MAX_AGE_SEC, encodeUserKey, issueUserToken, verifyUserToken } from "./gate/user-token";
+import { USER_COOKIE, USER_KEY_HEADER, USER_MAX_AGE_SEC, encodeUserKey, issueUserToken, linkCode, linkCodeMatches, verifyUserToken } from "./gate/user-token";
 import { GATE_COOKIE, GATE_MAX_AGE_SEC, issueToken, resolveCookieSecret, verifyToken } from "./gate/token";
 import { requestPath } from "./path";
 import { trialEnabled } from "./trial/config";
@@ -18,8 +18,8 @@ import type { TrialRegisterResult } from "./trial/users";
 export interface AssetsPort { fetch(req: Request): Promise<Response> }
 export interface PracticePort {
   fetch(req: Request): Promise<Response>;
-  loginAttempt(key: string, ok: boolean): Promise<LoginDecision>;
-  trialRegister(name: string, currentKey: string | null): Promise<TrialRegisterResult>;
+  loginAttempt(key: string, ok: boolean, clearOnOk?: boolean): Promise<LoginDecision>;
+  trialRegister(name: string, currentKey: string | null, resume: boolean): Promise<TrialRegisterResult>;
   trialParticipants(): Promise<TrialParticipantsResult>;
 }
 export interface WorkerEnv { ASSETS: AssetsPort; GATE_PASSWORD?: string; COOKIE_SECRET?: string; TRIAL_MODE?: string; TRIAL_ADMIN_TOKEN?: string }
@@ -31,6 +31,7 @@ export const DEFAULT_BODY_LIMIT = 61_440;
 const LOGIN_BODY_LIMIT = 4096;
 const TRIAL_BODY_LIMIT = 4096;
 const ADMIN_TOKEN_MIN = 32; // 管理用の合言葉（TRIAL_ADMIN_TOKEN）の長さ
+const CODE_INPUT_MAX = 32; // 引き継ぎ番号の入力の長さの上限（これを超えたら形が違う）
 const NAME_INPUT_MAX = 200; // これを超える文字は名前として読まない（長すぎる入力を DO へ送らない）
 
 const NOT_CONFIGURED_MESSAGE = "合言葉（GATE_PASSWORD）が未設定か10字未満か256字超のため、門を閉じています。Cloudflare の「Variables and Secrets」に10字以上・256字以内の合言葉を Secret として登録してください。";
@@ -51,6 +52,13 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
   const fail = (c: Context, error: string, reason: string, status: FailStatus, extra: Record<string, unknown> = {}) => {
     noStore(c);
     return c.json({ error, reason, ...extra }, status);
+  };
+  // 合言葉の失敗が続いたときの 429（/login・管理用の一覧・引き継ぎ番号で同じ文）
+  const limitedResponse = (c: Context, retryAfterSec: number, what = "合言葉") => {
+    noStore(c);
+    c.header("Retry-After", String(retryAfterSec));
+    const minutes = Math.max(1, Math.ceil(retryAfterSec / 60));
+    return c.json({ error: `${what}の間違いが続いたため、しばらく入れません。約${minutes}分後に試してください。`, reason: "limited", retryAfterSec }, 429);
   };
   const toLogin = (c: Context) => { noStore(c); return c.redirect("/login", 302); };
   const trialBodyLimit = bodyLimit({ maxSize: TRIAL_BODY_LIMIT, onError: (c) => tooLarge(c) });
@@ -155,11 +163,7 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
     const ok = await passwordMatches(password, gatePassword(c.env));
     const d = await o.practice(c.env).loginAttempt(clientKey(c.req.raw), ok);
     noStore(c);
-    if (d.result === "limited") {
-      c.header("Retry-After", String(d.retryAfterSec));
-      const minutes = Math.max(1, Math.ceil(d.retryAfterSec / 60));
-      return c.json({ error: `合言葉の間違いが続いたため、しばらく入れません。約${minutes}分後に試してください。`, reason: "limited", retryAfterSec: d.retryAfterSec }, 429);
-    }
+    if (d.result === "limited") return limitedResponse(c, d.retryAfterSec);
     if (d.result === "wrong") return c.json({ error: "合言葉が違います。", reason: "wrong" }, 401);
     const token = await issueToken(await resolveCookieSecret(c.env), gatePassword(c.env), now());
     setCookie(c, GATE_COOKIE, token, {
@@ -175,28 +179,58 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
   });
 
   // お試しモードの名前。cookie（app_user）は Worker だけが出す。1人用では今と同じ 405
+  // 本文は { name, code? }。code（引き継ぎ番号）が合えば、ほかの端末で登録した同じ名前に入れる
   app.post("/trial/name", async (c) => {
     if (!trialEnabled(c.env)) return notAllowed(c);
     let name: unknown;
+    let codeInput: unknown;
     try {
       const parsed: unknown = JSON.parse(await c.req.text());
-      name = typeof parsed === "object" && parsed !== null ? (parsed as { name?: unknown }).name : undefined;
+      const obj = typeof parsed === "object" && parsed !== null ? (parsed as { name?: unknown; code?: unknown }) : {};
+      name = obj.name;
+      codeInput = obj.code;
     } catch {
       name = undefined;
     }
     if (typeof name !== "string" || name.length > NAME_INPUT_MAX) return fail(c, NAME_RULE_MESSAGE, "bad_name", 400);
+    let code: string | null = null;
+    if (codeInput !== undefined && codeInput !== "") {
+      code = typeof codeInput === "string" && codeInput.length <= CODE_INPUT_MAX ? normalizeLinkCode(codeInput) : null;
+      if (code === null) return fail(c, "引き継ぎ番号は6桁の数字です。", "bad_code", 400);
+    }
     const secret = await resolveCookieSecret(c.env);
+    const practice = o.practice(c.env);
+    if (code !== null) {
+      const display = normalizeDisplayName(name);
+      if (display === null) return fail(c, NAME_RULE_MESSAGE, "bad_name", 400);
+      const matched = await linkCodeMatches(secret, nameKey(display), code);
+      // 合言葉の /login の成功で番号の失敗が消えないよう、別の鍵で数える（全体の上限だけ共有）
+      const d = await practice.loginAttempt(`code:${clientKey(c.req.raw)}`, matched, false);
+      if (d.result === "limited") return limitedResponse(c, d.retryAfterSec, "引き継ぎ番号");
+      if (!matched) return fail(c, "名前か引き継ぎ番号が違います。", "wrong_code", 403);
+    }
     const currentKey = await verifyUserToken(secret, getCookie(c, USER_COOKIE), now());
-    const r = await o.practice(c.env).trialRegister(name, currentKey);
+    const r = await practice.trialRegister(name, currentKey, code !== null);
     if (!r.ok || r.key === undefined) {
       if (r.reason === "bad_name") return fail(c, r.message ?? NAME_RULE_MESSAGE, "bad_name", 400);
+      // 番号が付いていて名前が未登録のとき（番号を消して送り直せば登録できる）
       if (r.reason === "name_taken") return fail(c, r.message ?? "", "name_taken", 409);
       if (r.reason === "trial_closed") return fail(c, r.message ?? "", "trial_closed", 403);
       return notAllowed(c);
     }
     setCookie(c, USER_COOKIE, await issueUserToken(secret, r.key, now()), { ...userCookieOptions(c), maxAge: USER_MAX_AGE_SEC });
     noStore(c);
-    return c.json({ ok: true, name: r.displayName }, 200);
+    return c.json({ ok: true, name: r.displayName, code: await linkCode(secret, r.key) }, 200);
+  });
+
+  // 引き継ぎ番号を見る（登録済みの人だけ。cookie の名前の鍵から計算するので DB には触らない）
+  app.post("/trial/code", async (c) => {
+    if (!trialEnabled(c.env)) return notAllowed(c);
+    const secret = await resolveCookieSecret(c.env);
+    const key = await verifyUserToken(secret, getCookie(c, USER_COOKIE), now());
+    if (key === null) return fail(c, NAME_REQUIRED_MESSAGE, "trial_name_required", 403);
+    noStore(c);
+    return c.json({ ok: true, code: await linkCode(secret, key) }, 200);
   });
 
   app.post("/trial/leave", (c) => {
@@ -225,17 +259,14 @@ export function createWorkerApp<E extends WorkerEnv>(o: { practice: (env: E) => 
     const ok = await passwordMatches(token, expected);
     const practice = o.practice(c.env);
     const decision = await practice.loginAttempt(clientKey(c.req.raw), ok);
-    if (decision.result === "limited") {
-      noStore(c);
-      c.header("Retry-After", String(decision.retryAfterSec));
-      const minutes = Math.max(1, Math.ceil(decision.retryAfterSec / 60));
-      return c.json({ error: `合言葉の間違いが続いたため、しばらく入れません。約${minutes}分後に試してください。`, reason: "limited", retryAfterSec: decision.retryAfterSec }, 429);
-    }
+    if (decision.result === "limited") return limitedResponse(c, decision.retryAfterSec);
     if (decision.result === "wrong") return fail(c, "管理用の合言葉が違います。", "wrong", 403);
     const report = await practice.trialParticipants();
     if (!report.ok) return notAllowed(c);
+    const secret = await resolveCookieSecret(c.env);
+    const participants = await Promise.all((report.participants ?? []).map(async ({ key, ...rest }) => ({ ...rest, code: await linkCode(secret, key) })));
     noStore(c);
-    return c.json(report, 200);
+    return c.json({ ...report, participants }, 200);
   });
 
   // 管理用ページ（React 側の同じ index.html）。お試しでなければ今と同じ（最後の受け皿＝ASSETS の 404）

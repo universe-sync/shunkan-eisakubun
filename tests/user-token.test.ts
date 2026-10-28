@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { bytesToBase64Url } from "../src/server/bytes";
-import { decodeUserKey, encodeUserKey, issueUserToken, verifyUserToken } from "../src/server/gate/user-token";
+import { decodeUserKey, encodeUserKey, issueUserToken, linkCode, linkCodeMatches, verifyUserToken } from "../src/server/gate/user-token";
 
 const NOW = Date.UTC(2026, 9, 22, 3, 0, 0);
 const SECRET = "s".repeat(40);
@@ -38,4 +38,22 @@ test("decodeUserKey は不正・正規でない base64url・UTF-8 でないバ�
   assert.equal(decodeUserKey(encodeUserKey("alice") + "="), null);
   assert.equal(decodeUserKey(bytesToBase64Url(Uint8Array.from([0xff, 0xfe, 0x41]))), null);
   assert.equal(decodeUserKey(encodeUserKey("Alice")), null);
+});
+
+test("引き継ぎ番号：6桁の数字で、同じ入力なら同じ。鍵や秘密が違えば変わる", async () => {
+  const a = await linkCode(SECRET, "alice");
+  assert.match(a, /^\d{6}$/);
+  assert.equal(await linkCode(SECRET, "alice"), a);
+  assert.notEqual(await linkCode(SECRET, "mika"), a);
+  assert.notEqual(await linkCode("x".repeat(40), "alice"), a);
+  for (const key of ["みか", "😀ゆう"]) assert.match(await linkCode(SECRET, key), /^\d{6}$/);
+});
+
+test("linkCodeMatches：一致で真、1字違い・長さ違いで偽", async () => {
+  const code = await linkCode(SECRET, "alice");
+  assert.equal(await linkCodeMatches(SECRET, "alice", code), true);
+  const wrong = code.slice(0, 5) + (code.endsWith("0") ? "1" : "0");
+  assert.equal(await linkCodeMatches(SECRET, "alice", wrong), false);
+  assert.equal(await linkCodeMatches(SECRET, "alice", code.slice(0, 5)), false);
+  assert.equal(await linkCodeMatches(SECRET, "mika", code), false);
 });

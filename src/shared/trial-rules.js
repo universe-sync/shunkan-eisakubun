@@ -2,7 +2,9 @@
 export const NAME_MAX_CHARS = 20;
 export const TRIAL_SESSION_SIZE = 10;
 export const NAME_RULE_MESSAGE = "名前は1〜20文字で入れてください（空白だけや制御文字は使えません）。";
-export const NAME_TAKEN_MESSAGE = "その名前はすでに使われています。別の名前にしてください。";
+export const NAME_TAKEN_MESSAGE = "その名前はすでに登録されています。あなたの名前なら、引き継ぎ番号（6桁）を入れてください。ほかの人の名前なら、別の名前にしてください。";
+export const NAME_REQUIRED_MESSAGE = "お試しに参加する名前が登録されていません。ページを再読み込みして、名前を入れてください。";
+export const LINK_CODE_DIGITS = 6;
 // 制御文字・ひとりぼっちのサロゲート・書式文字（ゼロ幅空白・向きの制御・ソフトハイフン・BOM など）。ゼロ幅接合子 U+200D だけは絵文字の組み合わせに要るので通す
 const BAD = /(?!\u200d)[\p{Cc}\p{Cs}\p{Cf}]/u;
 // U+200D は両側が U+200D 以外の文字のときだけ（先頭・末尾・連続は不可）
@@ -25,4 +27,11 @@ export function nameKey(display) { return display.toLowerCase().normalize("NFC")
 export function isNameKey(value) {
   return typeof value === "string" && value !== "" && value === value.trim() && [...value].length <= NAME_MAX_CHARS * 3
     && shapeOk(value) && value.normalize("NFC") === value && nameKey(value) === value;
+}
+
+/** 引き継ぎ番号の入力 → 半角6桁（空白は半角・全角とも途中も含めて取り除く）の数字（全角数字は半角にする）。だめなら null */
+export function normalizeLinkCode(input) {
+  if (typeof input !== "string") return null;
+  const s = input.replace(/\s+/g, "").replace(/[\uff10-\uff19]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xff10 + 0x30));
+  return new RegExp(`^\\d{${LINK_CODE_DIGITS}}$`).test(s) ? s : null;
 }

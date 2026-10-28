@@ -43,3 +43,6 @@
 - 名前の登録は `POST /trial/name`（重複は 409）。管理用の一覧は `POST /trial/admin/participants`（Secret `TRIAL_ADMIN_TOKEN`・32字以上。失敗はメンバーの合言葉の失敗と同じ枠で数える）と画面 `/trial/admin`
 - 上限：1人1日の回答 `TRIAL_QUESTIONS_PER_DAY`・読み上げ `TRIAL_SPEECH_PER_DAY`・終了日 `TRIAL_ENDS_ON`（その日を含む。日本時間）。全員の合計の上限は `DAILY_*`。日付はすべて `jstDate`
 - お試しの Worker には `COOKIE_SECRET` を必ず入れる（合言葉を変えても名前の cookie が消えない）
+- 引き継ぎ番号は `linkCode`（`COOKIE_SECRET` と名前の鍵の HMAC の6桁、`gate/user-token.ts`）。DB に持たない。`POST /trial/name` の `code` が合えば `resume` で同じ名前に入れる。失敗は別の鍵 `code:`＋IP で数え（`loginAttempt` の `clearOnOk=false`＝合っても消さない）、全体の30回だけ合言葉と共有する。`COOKIE_SECRET` を変えると全員の番号が変わる
+- 画面は戻ったとき（visible・pageshow・focus 15秒以上・操作60秒以上）に status と settings を読み直す（`refreshStatus`。録音中・採点待ち・リセット中は読まない）。ポーリングはしない。判断は `client/lib/refresh-policy.ts`
+- 一時停止中の［再開］は先に status を読み、別の端末で出題が進んでいれば（`sessionProgressed`）区間を送らずに待機へ戻す（`returnToIdle`）。戻ったときの読み直しでも同じ。読めなければ今までどおり再開する（サーバーが 409 で守る）

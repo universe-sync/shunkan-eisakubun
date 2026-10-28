@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="日本語を見て声に出して英語にする練習アプリ speak25 を、自分の Cloudflare に置く手順を図で説明します。">
+<meta name="description" content="日本語を見て声に出して英語にする練習アプリ speak25 を、Cloudflareへデプロイする方法とPCでローカル起動する方法を説明します。">
 <title>speak25 の始め方</title>
 <style>
 :root {
@@ -29,6 +29,13 @@ code { background: var(--soft); padding: 1px 6px; border-radius: 4px; font-size:
 .lead { color: var(--muted); }
 .btn { display: inline-block; background: var(--accent); color: var(--accent-text); text-decoration: none; font-weight: 700; padding: 12px 20px; border-radius: 8px; margin: 4px 8px 4px 0; }
 .btn.sub { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+.path-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.path-card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.path-card h3 { margin-bottom: 8px; }
+.path-card p:last-child { margin-bottom: 0; }
+.badge { display: inline-block; margin-bottom: 8px; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--accent); font-weight: 700; font-size: .85rem; }
+.command { background: #172124; color: #edf6f7; border-radius: 8px; padding: 12px; overflow-x: auto; line-height: 1.55; }
+.command code { background: transparent; color: inherit; padding: 0; white-space: pre; }
 .flow { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
 .flow .node { background: var(--card); border: 1.5px solid var(--line); border-radius: 8px; padding: 8px 10px; text-align: center; }
 .flow .node.hl { background: var(--soft); border-color: var(--accent); }
@@ -62,19 +69,42 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
   .steps > li { padding-left: 54px; }
   th { white-space: normal; }
 }
+@media (max-width: 620px) {
+  .path-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
 <main>
   <h1>speak25 の始め方</h1>
-  <p class="lead">毎日25分、日本語を見て声に出して英語にする練習アプリです。自分の Cloudflare に置き、自分の Gemini と Claude のキーで動かします。ここでは、置くまでの手順を順番に説明します。</p>
+  <p class="lead">毎日25分、日本語を見て声に出して英語にする練習アプリです。スマホでも使うならCloudflareへデプロイ、PCだけで使うならPC内でローカル起動できます。どちらも自分のGeminiとClaudeのキーで動かします。</p>
   <p>
-    <a class="btn" href="https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/speak25">Deploy to Cloudflare</a>
+    <a class="btn" href="#cloudflare">スマホでも使う</a>
+    <a class="btn sub" href="#local">PCだけで使う</a>
     <a class="btn sub" href="https://github.com/universe-sync/speak25">リポジトリを見る</a>
   </p>
 
+  <h2>使い方を選ぶ</h2>
+  <div class="path-grid">
+    <section class="path-card">
+      <span class="badge">スマホ・PC</span>
+      <h3>Cloudflareへデプロイ</h3>
+      <p>インターネット上の自分専用URLで使います。iPhone・Android・PCから開け、PCを起動したままにする必要もありません。</p>
+      <p><strong>必要：</strong>GitHub、Cloudflare、Google AI Studio、Claude Consoleの各アカウント</p>
+      <p><a href="#cloudflare">Cloudflareの手順へ</a></p>
+    </section>
+    <section class="path-card">
+      <span class="badge">PCだけ</span>
+      <h3>ローカルWebアプリ</h3>
+      <p>自分のPCだけで起動し、ブラウザで使います。CloudflareとGitHubのアカウントは不要ですが、使う間はターミナルを開いておきます。</p>
+      <p><strong>必要：</strong>Node.js 22.12以上、Google AI StudioとClaude Consoleのアカウント</p>
+      <p><a href="#local">PCローカルの手順へ</a></p>
+    </section>
+  </div>
+
   <h2>しくみ</h2>
-  <div class="flow" role="img" aria-label="あなたのブラウザから、あなたの Cloudflare の Worker と Durable Object を通り、外部のサービスの Gemini と Claude に届く流れ">
+  <h3>Cloudflareへデプロイする場合</h3>
+  <div class="flow" role="img" aria-label="ブラウザから自分のCloudflareのWorkerとDurable Objectを通り、GeminiとClaudeに届く流れ">
     <div class="node"><strong>あなたのブラウザ</strong><span>マイクで答える</span></div>
     <div class="arr" aria-hidden="true"></div>
     <div class="zone">
@@ -90,13 +120,31 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
       <div class="node"><strong>Claude（Anthropic）</strong><span>採点</span></div>
     </div>
   </div>
-  <p style="margin-top:12px">作者のサーバーは通りません。合言葉・キー・練習の記録は、あなたの Cloudflare の中だけにあります。外への通信は Gemini と Anthropic だけです。</p>
+  <p style="margin-top:12px">合言葉・キー・練習の記録は、あなたのCloudflareの中にあります。</p>
+  <h3 style="margin-top:20px">PCでローカル起動する場合</h3>
+  <div class="flow" role="img" aria-label="ブラウザから同じPCで動くローカルWorkerとDurable Objectを通り、GeminiとClaudeに届く流れ">
+    <div class="node"><strong>PCのブラウザ</strong><span>マイクで答える</span></div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="zone">
+      <div class="zone-title">同じPC（キーと記録はここ）</div>
+      <div class="node hl"><strong>ローカルWorker</strong><span>合言葉の門・頻度の制限</span></div>
+      <div class="arr" aria-hidden="true"></div>
+      <div class="node hl"><strong>ローカルDurable Object</strong><span>記録・1日の上限・外部サービスの呼び出し</span></div>
+    </div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="ext">
+      <div class="zone-title">外部のサービス</div>
+      <div class="node"><strong>Gemini（Google）</strong><span>聞き取り・読み上げ</span></div>
+      <div class="node"><strong>Claude（Anthropic）</strong><span>採点</span></div>
+    </div>
+  </div>
+  <p style="margin-top:12px">合言葉とキーはPC内の<code>.dev.vars</code>、練習の記録はPC内の<code>.wrangler/state</code>にあります。作者のサーバーはどちらの方法でも通りません。外への通信はGeminiとAnthropicだけです。</p>
 
   <h2>始める前に：使いすぎを防ぐ</h2>
   <div class="note">キーを作る<strong>前に</strong>、お金の上限を掛けます。Gemini と Claude は、使った分だけそれぞれあなたに請求されます。</div>
 
-  <h2>手順</h2>
-  <p>必要なもの：GitHub の無料アカウント、Cloudflare の無料アカウント、Google アカウント、Claude Console のアカウント。</p>
+  <h2>共通の準備</h2>
+  <p>どちらの方法でも、Google AI StudioとClaude Consoleのアカウント、2つのAPIキーが必要です。</p>
   <ol class="steps">
     <li>
       <h3>Gemini の API キーを作る</h3>
@@ -123,12 +171,18 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
         <li>ユーザー名はありません。名前を足しても、合言葉を長くするのと変わらないためです。</li>
       </ul>
     </li>
+  </ol>
+
+  <h2 id="cloudflare">A. スマホでも使う：Cloudflareへデプロイ</h2>
+  <p>自分専用のURLを作り、スマホとPCの両方から使う方法です。GitHubとCloudflareの無料アカウントも用意します。</p>
+  <p><a class="btn" href="https://deploy.workers.cloudflare.com/?url=https://github.com/universe-sync/speak25">Deploy to Cloudflare</a></p>
+  <ol class="steps">
     <li>
-      <h3>Deploy ボタンを押す</h3>
+      <h3>Deployボタンを押す</h3>
       <ul>
-        <li>上の「Deploy to Cloudflare」を押し、GitHub と Cloudflare にログインします。あなたの GitHub にこのリポジトリの複製ができます。</li>
+        <li>「Deploy to Cloudflare」を押し、GitHubとCloudflareにログインします。あなたのGitHubにこのリポジトリの複製ができます。</li>
         <li>画面に出る3つの値を入れます：<code>GATE_PASSWORD</code>（合言葉）、<code>GEMINI_API_KEY</code>、<code>ANTHROPIC_API_KEY</code>。</li>
-        <li>そのまま進めると、Cloudflare が作って公開します。</li>
+        <li>そのまま進めると、Cloudflareが自分専用のURLを作ります。</li>
       </ul>
     </li>
     <li>
@@ -138,6 +192,40 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
         <li>マイクの許可を出します。</li>
         <li>スマホでは「ホーム画面に追加」できます（iPhone は共有メニュー、Android の Chrome は ⋮ のメニュー）。</li>
       </ul>
+    </li>
+  </ol>
+
+  <h2 id="local">B. PCだけで使う：ローカルWebアプリ</h2>
+  <p>Cloudflareへ公開せず、PCの中だけで動かします。スマホや別のPCからは使えません。</p>
+  <ol class="steps">
+    <li>
+      <h3>Node.jsを入れる</h3>
+      <p><a href="https://nodejs.org/ja/download">Node.js公式サイト</a>から、22.12以上をインストールします。すでに入っている場合はターミナルで<code>node -v</code>を実行して確認できます。</p>
+    </li>
+    <li>
+      <h3>アプリをダウンロードする</h3>
+      <p><a href="https://github.com/universe-sync/speak25">GitHubのリポジトリ</a>を開き、「Code」→「Download ZIP」を押します。ZIPを展開すると<code>speak25-main</code>フォルダができます。</p>
+    </li>
+    <li>
+      <h3>必要なものをインストールする</h3>
+      <p>ターミナルで<code>speak25-main</code>フォルダへ移動し、次を実行します。</p>
+      <pre class="command"><code>npm install</code></pre>
+    </li>
+    <li>
+      <h3>合言葉とAPIキーをPCに保存する</h3>
+      <p><code>.dev.vars.example</code>を写して<code>.dev.vars</code>を作ります。<code>.</code>で始まるファイルはMacのFinderでは見えないため、ターミナルで写します（WindowsのPowerShell・コマンドプロンプトでは<code>copy .dev.vars.example .dev.vars</code>）。</p>
+      <pre class="command"><code>cp .dev.vars.example .dev.vars</code></pre>
+      <p><code>.dev.vars</code>をテキストエディタで開き（Macは<code>open -e .dev.vars</code>、Windowsは<code>notepad .dev.vars</code>）、次の3行の<code>=</code>の後ろへ、共通の準備で用意した値を入れて保存します。</p>
+      <pre class="command"><code>GATE_PASSWORD=10字以上の合言葉
+GEMINI_API_KEY=GeminiのAPIキー
+ANTHROPIC_API_KEY=ClaudeのAPIキー</code></pre>
+      <div class="note"><code>.dev.vars</code>を他人へ送ったり、GitHubへアップロードしたりしないでください。このファイルはアプリのGit管理から外れる設定になっています。</div>
+    </li>
+    <li>
+      <h3>起動してブラウザで開く</h3>
+      <pre class="command"><code>npm run dev</code></pre>
+      <p>ターミナルに起動完了の表示が出たら、同じPCのブラウザで<a href="http://localhost:8820"><code>http://localhost:8820</code></a>を開きます。合言葉で入り、マイクを許可します。</p>
+      <p>使っている間はターミナルを開いたままにします。終了するときはターミナルで<code>Ctrl</code>＋<code>C</code>を押します。次回も<code>npm run dev</code>で起動します。</p>
     </li>
   </ol>
 
@@ -180,17 +268,19 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
       <tr><td>「Gemini の請求の設定を Google AI Studio で確かめてください。」</td><td>請求先がつながっているか確かめます。</td></tr>
       <tr><td>「Gemini の利用の割り当て（…）に達しました。」</td><td>月の費用の上限などに達しました。時間をおくか、Google AI Studio で上限を確かめます。</td></tr>
       <tr><td>「今日の…上限に達しました」</td><td>アプリ内の1日の上限です。日本時間の0時を過ぎると戻ります。</td></tr>
+      <tr><td><code>localhost:8820</code>が開かない</td><td>ローカル版を起動したターミナルが開いているか、<code>npm run dev</code>がエラーで止まっていないか確かめます。終了していたら、同じフォルダで起動し直します。</td></tr>
     </table>
   </div>
   <p style="margin-top:12px">Claude の月の上限・残高切れ・キーの誤りと、Gemini の残高切れ・請求の設定・キーの誤りを受けると、そのサービスは10分間呼ばなくなります。直したあとも、最大10分は待つことがあります。Gemini の「利用の割り当て」は10分止めず、そのときの呼び出しが断られるだけです（料金はかかりません）。</p>
-  <p><strong>合言葉やキーを変える：</strong>Cloudflare のダッシュボード → Workers &amp; Pages → このアプリ → Settings → Variables and Secrets。合言葉を変えると、全員の cookie が無効になって入り直しになります。</p>
-  <p><strong>更新を取り込む：</strong>いちばん簡単なのは、もう一度 Deploy ボタンで置き直すことです（練習の記録は引き継がれません）。Git が使える人向けの方法など、詳しくは <a href="https://github.com/universe-sync/speak25#更新を取り込むとき">README</a> を見てください。まだ実際に試していない手順があります。</p>
+  <p><strong>Cloudflare版で合言葉やキーを変える：</strong>Cloudflareのダッシュボード → Workers &amp; Pages → このアプリ → Settings → Variables and Secrets。合言葉を変えると、全員のcookieが無効になって入り直しになります。</p>
+  <p><strong>ローカル版で合言葉やキーを変える：</strong>ターミナルで<code>Ctrl</code>＋<code>C</code>を押して止め、<code>.dev.vars</code>を編集してから<code>npm run dev</code>で起動し直します。</p>
+  <p><strong>更新を取り込む：</strong>Cloudflare版はもう一度Deployボタンで置き直す方法、ローカル版は新しいZIPを展開して<code>.dev.vars</code>と必要なら<code>.wrangler/state</code>を引き継ぐ方法があります。詳しくは<a href="https://github.com/universe-sync/speak25#更新を取り込むとき">README</a>を見てください。まだ実際に試していない手順があります。</p>
 
   <h2>安全のしくみ</h2>
   <ul>
     <li>入口は合言葉だけです。失敗は10分のあいだに、IP ごとに5回、全体で30回までです。</li>
     <li>入ったあとは cookie（180日・HttpOnly・署名つき）で見分けます。ログアウトは、その端末の cookie を消すだけです。cookie が漏れたら、合言葉を変えてください。</li>
-    <li>cookie が漏れた場合に備え、<code>COOKIE_SECRET</code> を別の強い乱数で登録してください。共有する合言葉は最低10字で、他で使っていない推測されにくいものにします。</li>
+    <li>cookieが漏れた場合に備え、Cloudflare版では<code>COOKIE_SECRET</code>を別の強い乱数で登録できます。ローカル版では必要なら<code>.dev.vars</code>へ同じ名前で追加できます。共有する合言葉は最低10字で、他で使っていない推測されにくいものにします。</li>
     <li>検索に出ない設定にしています。</li>
   </ul>
 

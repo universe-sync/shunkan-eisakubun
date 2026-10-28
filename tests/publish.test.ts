@@ -22,7 +22,8 @@ function files(dir: string, out: string[] = []): string[] {
 }
 // このテスト自身も検査する。禁止の形は文字の組み合わせで作り、この文章に同じ形が現れないようにしている
 const re = (...parts: string[]): RegExp => new RegExp(parts.join(""));
-const targets = files(ROOT).filter((file) => !BINARY.test(file) && !/(^|\/)\.dev\.vars$/.test(file) && !/(^|\/)\.env/.test(file) && !/(^|\/)tests\/[^/]*\.local\.json$/.test(file));
+// .claude/settings.local.json は手元の Claude Code の許可の設定（.gitignore 済みで公開されない）なので見ない
+const targets = files(ROOT).filter((file) => !BINARY.test(file) && !/(^|\/)\.dev\.vars$/.test(file) && !/(^|\/)\.env/.test(file) && !/(^|\/)tests\/[^/]*\.local\.json$/.test(file) && !/(^|\/)\.claude\/settings\.local\.json$/.test(file));
 
 const FORBIDDEN: ReadonlyArray<[string, RegExp]> = [
   ["個人のパス（Mac）", re("/Us", "ers/")],
