@@ -89,7 +89,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
     <section class="path-card">
       <span class="badge">スマホ・PC</span>
       <h3>Cloudflareへデプロイ</h3>
-      <p>インターネット上の自分専用URLで使います。iPhone・Android・PCから開け、PCを起動したままにする必要もありません。</p>
+      <p>インターネット上の自分専用URLで使います。iPhone・Android・PCから開け、どの端末でも同じ記録で続けられます。PCを起動したままにする必要もありません。</p>
       <p><strong>必要：</strong>GitHub、Cloudflare、Google AI Studio、Claude Consoleの各アカウント</p>
       <p><a href="#cloudflare">Cloudflareの手順へ</a></p>
     </section>
@@ -101,6 +101,15 @@ footer { margin-top: 48px; color: var(--muted); font-size: .9rem; }
       <p><a href="#local">PCローカルの手順へ</a></p>
     </section>
   </div>
+
+  <h2>できること</h2>
+  <ul>
+    <li>日本語の問題（100問）を見て英語で話すと、Geminiが文字に書き起こし、Claudeが採点します。意味が伝わり、合計80点以上なら合格です。3回連続で合格した問題は出題から外れます。</li>
+    <li>1問の時間は10〜30秒、1回の問題数は10・20・30・50問から選べます。答え終わったら「次へ」（PCではTabキー）で次の問題へ進めます。</li>
+    <li>最後の答え合わせで、模範文・「あなたの文を直すと」・文法の説明を確かめ、「▶ 再生」で英語を聞けます。読み上げの速さは「普通」「ゆっくり」から選べます。最近聞いた文は、同じ速さならページを開いている間は利用料をかけずに聞き直せます。</li>
+    <li>今日の回答の数・今日の平均点・全体の平均点と、問題ごとの回答履歴を見られます。</li>
+    <li>Cloudflare版は、スマホとPCなど複数の端末で同じ記録を使えます（同時に回答することはできません）。</li>
+  </ul>
 
   <h2>しくみ</h2>
   <h3>Cloudflareへデプロイする場合</h3>
@@ -268,6 +277,7 @@ ANTHROPIC_API_KEY=ClaudeのAPIキー</code></pre>
       <tr><td>「Gemini の請求の設定を Google AI Studio で確かめてください。」</td><td>請求先がつながっているか確かめます。</td></tr>
       <tr><td>「Gemini の利用の割り当て（…）に達しました。」</td><td>月の費用の上限などに達しました。時間をおくか、Google AI Studio で上限を確かめます。</td></tr>
       <tr><td>「今日の…上限に達しました」</td><td>アプリ内の1日の上限です。日本時間の0時を過ぎると戻ります。</td></tr>
+      <tr><td>「別の端末でこの出題が進みました」</td><td>別の端末で同じ出題を進めた・止めた・記録をリセットしたため、この画面を最新にしました。スタートで続き（終わっていれば新しい出題）から始めます。</td></tr>
       <tr><td><code>localhost:8820</code>が開かない</td><td>ローカル版を起動したターミナルが開いているか、<code>npm run dev</code>がエラーで止まっていないか確かめます。終了していたら、同じフォルダで起動し直します。</td></tr>
     </table>
   </div>

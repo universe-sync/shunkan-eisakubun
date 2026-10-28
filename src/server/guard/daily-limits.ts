@@ -61,5 +61,5 @@ export function checkAnswerCapacity(db: Db, cfg: GuardConfig, now: number, today
 export function dailyLimitMessage(limit: DailyLimit, cfg: GuardConfig): string {
   if (limit === "answers") return `今日の採点の上限（${cfg.dailyAnswers}回）に達しました。日本時間の0時を過ぎると、また採点できます。`;
   if (limit === "yen") return `今日の利用料の上限（約${cfg.dailyYen}円）に達しました。日本時間の0時を過ぎると、また使えます。`;
-  return `今日の読み上げの上限（${cfg.dailySpeech}回）に達しました。日本時間の0時を過ぎると、また使えます。`;
+  return `今日の読み上げの上限（${cfg.dailySpeech}回）に達しました。このページで最近再生した文は、同じ速さなら聞き直せます。日本時間の0時を過ぎると、また使えます。`;
 }

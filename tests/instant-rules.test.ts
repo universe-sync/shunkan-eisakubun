@@ -3,7 +3,7 @@ forbidNetwork();
 // 瞬間英作文の決まり（src/instant-rules.js）の試験
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ANSWER_MAX_SECONDS, PASS_SCORE, QUESTION_COUNT_DEFAULT, QUESTION_COUNT_OPTIONS, QUESTION_SECONDS_DEFAULT, QUESTION_SECONDS_MAX, QUESTION_SECONDS_MIN, QUESTION_SECONDS_PRESETS, parseQuestionCount, parseQuestionSeconds, questionDurationMs, questionSecondsLabel, stepQuestionSeconds } from "../src/shared/instant-rules.js";
+import { ANSWER_MAX_SECONDS, PASS_SCORE, QUESTION_COUNT_DEFAULT, QUESTION_COUNT_OPTIONS, QUESTION_SECONDS_DEFAULT, QUESTION_SECONDS_MAX, QUESTION_SECONDS_MIN, QUESTION_SECONDS_PRESETS, parseQuestionCount, parseQuestionSeconds, questionDurationMs, questionSecondsLabel, SPEECH_SPEEDS, SPEECH_SPEED_DEFAULT, parseSpeechSpeed, stepQuestionSeconds } from "../src/shared/instant-rules.js";
 
 test("定数", () => {
   assert.equal(PASS_SCORE, 80);
@@ -33,4 +33,11 @@ test("stepQuestionSeconds・questionDurationMs・questionSecondsLabel", () => {
   assert.equal(questionDurationMs(15), 15000);
   assert.equal(questionSecondsLabel(15), "15秒");
   assert.equal(questionSecondsLabel("none"), "制限なし"); // 前の版の記録の表示用
+});
+
+test("読み上げの速さ：normal と slow だけ通す。既定は normal", () => {
+  assert.deepEqual([...SPEECH_SPEEDS], ["normal", "slow"]);
+  assert.equal(SPEECH_SPEED_DEFAULT, "normal");
+  for (const value of ["normal", "slow"]) assert.equal(parseSpeechSpeed(value), value);
+  for (const value of ["fast", "Normal", "", null, undefined, 1, true, [], {}]) assert.equal(parseSpeechSpeed(value), undefined, String(value));
 });

@@ -1,5 +1,6 @@
 import { base64ToBytes, asciiAt } from "../bytes";
 import type { FetchLike } from "./outbound";
+import { SPEECH_SPEED_DEFAULT, type SpeechSpeed } from "../../shared/instant-rules.js";
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions";
 // 聞き取り専用モデル（指示ではなく設定で動く）。上限が低い（Tier 1 で1分10回・1日100回）ので、上限・失敗のときは FALLBACK に切り替える
@@ -182,8 +183,11 @@ export function createGemini(d: GeminiDeps) {
       }
       return { ...(await transcribeWithFallbackModel({ audioBase64, mimeType })), model: FALLBACK_TRANSCRIPTION_MODEL };
     },
-    async synthesizeSpeech(text: string, language = "en"): Promise<Uint8Array> {
-      const style = language === "ja" ? "clear, natural Japanese at a comfortable learning pace" : "clear, natural English for a learner; slightly slower than normal conversation";
+    // speed は英語だけに効く。日本語（問題文の読み上げ）は速さを選ばせないので、いつも同じ文
+    async synthesizeSpeech(text: string, language = "en", speed: SpeechSpeed = SPEECH_SPEED_DEFAULT): Promise<Uint8Array> {
+      const style = language === "ja" ? "clear, natural Japanese at a comfortable learning pace"
+        : speed === "slow" ? "clear, natural English for a learner; slightly slower than normal conversation" // ゆっくりは以前の既定の速さ（2026-10-28 オーナーの指示。強いゆっくりは遅すぎた）
+        : "clear, natural English at a normal conversational pace, as a native speaker would say it to another adult; do not slow down or over-enunciate";
       const data = await interact({
         model: SPEECH_MODEL,
         input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style }] }] }],

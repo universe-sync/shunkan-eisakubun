@@ -50,6 +50,25 @@ test("書き起こしは聞き取り専用モデルへ設定だけで送り（�
   });
 });
 
+test("読み上げの速さ：第3引数で英語の指示が変わる。日本語は速さに関係なく同じ", async () => {
+  const reply = { steps: [{ type: "model_output", content: [{ type: "audio", data: wavHeaderBase64 }] }] };
+  await withFakeGemini([reply, reply, reply, reply, reply], async (requests) => {
+    const style = (request: any) => request.input[0].content[0].annotations[0].style as string;
+    await synthesizeSpeech("hello");
+    await synthesizeSpeech("hello", "en");
+    await synthesizeSpeech("hello", "en", "normal");
+    await synthesizeSpeech("hello", "en", "slow");
+    await synthesizeSpeech("こんにちは", "ja", "slow");
+    assert.match(style(requests[0]), /normal conversational pace/);
+    assert.equal(style(requests[1]), style(requests[0]));
+    assert.equal(style(requests[2]), style(requests[0]));
+    assert.match(style(requests[3]), /slightly slower than normal conversation/);
+    assert.doesNotMatch(style(requests[3]), /normal conversational/);
+    assert.match(style(requests[4]), /Japanese/);
+    assert.doesNotMatch(style(requests[4]), /slowly/);
+  });
+});
+
 test("聞き取り専用モデルの応答が空・空白だけなら empty（作らない）", async () => {
   for (const text of ["", "  \n "]) {
     await withFakeGemini([plainReply(text)], async (calls) => {

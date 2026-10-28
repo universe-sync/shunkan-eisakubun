@@ -51,12 +51,25 @@ test("画面のコード：読み上げの音声の使い回しと、履歴の�
   assert.ok(text.includes("今日の回答"));
 });
 
+test("画面のコード：読み上げの速さの欄と要約、保存", () => {
+  const text = readFileSync(join(ROOT, "src", "client", "InstantPractice.tsx"), "utf8");
+  assert.ok(text.includes("<legend>読み上げの速さ</legend>"));
+  assert.ok(text.includes('role="group" aria-label="読み上げの速さ"'));
+  assert.ok(text.includes('normal: "普通", slow: "ゆっくり"'));
+  assert.ok(text.includes("答え合わせの「▶ 再生」で聞く英語の速さです。"));
+  assert.ok(text.includes("速さを変えて同じ文を聞き直すと、読み上げの回数を1回使います。"));
+  assert.ok(text.includes("読み上げ <strong>{SPEECH_SPEED_LABEL[speechSpeed]}</strong>"));
+  assert.ok(text.includes('"speak25.speechSpeed"'));
+  assert.ok(text.includes("body: JSON.stringify({ questionId, attemptId, speed })"));
+});
+
 test("お試しの文は「問題数は選べます」と言わない（1問の時間だけ）。1人用の文は今のまま", () => {
   const text = readFileSync(join(ROOT, "src", "client", "InstantPractice.tsx"), "utf8");
   const policy = readFileSync(join(ROOT, "src", "client", "lib", "refresh-policy.ts"), "utf8"); // 待機中の案内の文は refresh-policy.ts にある
   assert.ok(policy.includes("スタートすると録音が始まります。1問の時間は、上の欄で選べます（お試しは1回10問です）。"));
   assert.ok(policy.includes("スタートすると録音が始まります。1問の時間と問題数は、上の欄で選べます。")); // 1人用
-  assert.ok(text.includes("1問の時間を10〜30秒から選べます（お試しは1回10問です）。"));
+  assert.ok(text.includes("お試しは1回10問に固定されています。"));
+  assert.ok(!text.includes("1問の時間を10〜30秒から選べます（お試しは1回10問です）。"));
   assert.ok(text.includes("1問の時間を10〜30秒、1回の問題数を10・20・30・50問から選べます。"));
   assert.ok(text.includes("設定した時間がたつと自動で次の問題へ進みます。"));
   assert.ok(text.includes("設定した時間を待たずに次へ進めます。"));
@@ -105,4 +118,38 @@ test("画面のコード：再開の確認の後に裏へ回っていたら再�
   const text = readFileSync(join(ROOT, "src", "client", "InstantPractice.tsx"), "utf8");
   assert.ok(text.includes('document.visibilityState === "hidden") { setMessage("画面が裏に回ったため一時停止しました。「再開」で続けます。")'));
   assert.ok(text.includes("playRun === runId.current && !isActive(runRef.current.phase)"));
+});
+
+test("スマホでは Tab の案内を出さない（key-hint）・使い方の文言", () => {
+  const text = readFileSync(join(ROOT, "src", "client", "InstantPractice.tsx"), "utf8");
+  const css = readFileSync(join(ROOT, "src", "client", "styles.css"), "utf8");
+  assert.ok(text.includes('次へ<span className="key-hint">（Tab）</span>'));
+  assert.ok(text.includes('aria-keyshortcuts="Tab"'));
+  assert.ok(text.includes('<span className="key-hint"> Tab キーか</span>'));
+  assert.ok(!text.includes("Tab キー（または「次へ」）"));
+  assert.ok(!text.includes("Tab で進んだ問題"));
+  assert.ok(css.includes(".key-hint{display:none}") && css.includes("(hover:hover) and (pointer:fine)"));
+  assert.ok(text.includes("<li>1日{trial.questionsLimit}問まで答えられます。</li>"));
+  for (const gone of ["1回は10問で、今日の残りが10問より少ない日は", "数は日本時間の0時に戻ります"]) assert.ok(!text.includes(gone), gone);
+});
+
+test("読み上げの速さ：切り替えで古い要求を捨てる印と、設定の要約の折り返し", () => {
+  const text = readFileSync(join(ROOT, "src", "client", "InstantPractice.tsx"), "utf8");
+  const css = readFileSync(join(ROOT, "src", "client", "styles.css"), "utf8");
+  assert.ok(text.includes("speechSeq.current += 1;"));
+  assert.ok(text.includes("seq !== speechSeq.current"));
+  assert.ok(text.includes("if (speed === speechSpeed) return;"));
+  assert.ok(text.includes('className="setup-summary-item"'));
+  assert.ok(css.includes(".setup-summary-item{white-space:nowrap}"));
+});
+
+test("使い方：1人用だけの「別の端末で使うとき」（お試しの制限を持ち込まない）", () => {
+  const text = readFileSync(join(ROOT, "src", "client", "InstantPractice.tsx"), "utf8");
+  assert.ok(text.includes("{summary && !trial && <><h3>別の端末で使うとき</h3>"));
+  assert.ok(text.includes("<li>別のブラウザや別の端末（Cloudflareに置いた場合）で開いても、合言葉を入れれば同じ記録で続けられます。</li>"));
+  assert.ok(text.includes("<li>複数の端末で同時に回答することはできません。やめるときは「停止」を押すか、一時停止のままにして、もう片方で続けます。</li>"));
+  const from = text.indexOf("別の端末で使うとき");
+  const part = text.slice(from, text.indexOf("</ul>", from));
+  for (const w of ["引き継ぎ番号", "お試し", "1日"]) assert.ok(!part.includes(w), w);
+  assert.ok(text.includes("お試しのきまり"));
 });

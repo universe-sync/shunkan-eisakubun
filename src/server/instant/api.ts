@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { audioSummary, inspectSpeechWav } from "../../shared/audio.js";
 import { APP_NAME } from "../../shared/app-info.js";
-import { QUESTION_COUNT_DEFAULT, parseQuestionCount, parseQuestionSeconds } from "../../shared/instant-rules.js";
+import { QUESTION_COUNT_DEFAULT, SPEECH_SPEED_DEFAULT, parseQuestionCount, parseQuestionSeconds, parseSpeechSpeed } from "../../shared/instant-rules.js";
 import { createClaude, ClaudeError } from "../ai/claude";
 import { createGemini, GeminiError } from "../ai/gemini";
 import { clientKey } from "../gate/policy";
@@ -162,7 +162,8 @@ export function createInstantApi(d: InstantApiDeps): Hono {
         maxCount = remaining;
       }
       // 真なら文字にして比べる（文字でない値を送っても、世代の確かめを素通りしない）
-      return c.json(store.start(body.generationId ? String(body.generationId) : undefined, { questionSeconds, questionCount: trial.enabled ? TRIAL_SESSION_SIZE : questionCount, ...(maxCount !== undefined ? { maxCount } : {}) }));
+      const started = store.start(body.generationId ? String(body.generationId) : undefined, { questionSeconds, questionCount: trial.enabled ? TRIAL_SESSION_SIZE : questionCount, ...(maxCount !== undefined ? { maxCount } : {}) });
+      return c.json(trial.enabled ? { ...started, trial: trialOf(c) } : started);
     } catch (error) { return instantError(c, error); }
   });
 
@@ -256,8 +257,10 @@ export function createInstantApi(d: InstantApiDeps): Hono {
     try {
       const limited = rateRefusal(c, "speech", cfg.rateSpeechPerMinute);
       if (limited) return limited;
-      const { questionId, attemptId, kind } = await readJsonObject(c, DEFAULT_BODY_LIMIT);
+      const { questionId, attemptId, kind, speed: rawSpeed } = await readJsonObject(c, DEFAULT_BODY_LIMIT);
       if (typeof questionId !== "string" || (attemptId !== undefined && typeof attemptId !== "string") || (kind !== undefined && kind !== "prompt")) return c.json({ error: "読み上げ対象が不正です。" }, 400);
+      const speed = rawSpeed === undefined ? SPEECH_SPEED_DEFAULT : parseSpeechSpeed(rawSpeed);
+      if (!speed) return c.json({ error: "読み上げの速さの指定が正しくありません。" }, 400);
       const speechText = storeOf(c).speechText(questionId, attemptId as string | undefined, kind === "prompt");
       if (!speechText) return c.json({ error: "読み上げる文章を見つけられませんでした。英文は答え合わせ後に再生できます。" }, 404);
       const geminiBlock = blocker.active("gemini", d.now());
@@ -266,7 +269,7 @@ export function createInstantApi(d: InstantApiDeps): Hono {
       if (reserved.user) return c.json({ error: speechDoneMessage, reason: "trial_speech_done", trial: trialOf(c) }, 429);
       if (!reserved.ok) return dailyRefusal(c, reserved.limit as DailyLimit);
       let audio: Uint8Array;
-      try { audio = await gemini.synthesizeSpeech(speechText, kind === "prompt" ? "ja" : "en"); }
+      try { audio = await gemini.synthesizeSpeech(speechText, kind === "prompt" ? "ja" : "en", speed); }
       catch (error) { noteFailure("gemini", error); throw error; }
       return new Response(audio as unknown as BodyInit, { headers: { "content-type": "audio/wav", "cache-control": "no-store" } });
     } catch (error) { return instantError(c, error); }

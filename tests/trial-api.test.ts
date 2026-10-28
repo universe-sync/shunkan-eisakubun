@@ -73,6 +73,19 @@ test("1回は10問に固定（50を送っても10）。15は400", async () => {
   assert.equal((await u.postJson("/api/instant/start", { generationId: st.generationId, questionCount: 15 })).status, 400);
   const r = await u.postJson("/api/instant/start", { generationId: st.generationId, questionCount: 50 });
   assert.equal(r.body.session.total, 10);
+  assert.ok(r.body.trial && typeof r.body.trial === "object", "お試しの start 応答に trial がある");
+  assert.deepEqual(r.body.trial, (await u.getJson("/api/trial/me")).body.trial, "start の trial は /api/trial/me の trial と同じ");
+});
+
+test("別の端末で10問答えた後に start すると、start 応答の trial.questionsUsed に反映される", async () => {
+  const a = makeTrialApi();
+  const pc = a.as("Mika"); // サーバーは人の鍵で見るので、同じ鍵＝別の端末と同じ（スマホで10問、PC でスタート）
+  await noAnswers(pc, 10);
+  const r = await begin(pc);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.trial.questionsUsed, 10);
+  assert.deepEqual(r.body.trial, (await pc.getJson("/api/trial/me")).body.trial);
+  assert.deepEqual(r.body.trial, (await pc.getJson("/api/instant/status")).body.trial);
 });
 
 test("29問→1問だけ出る→記録で30問になり、続く start は 429 trial_daily_done", async () => {
@@ -329,4 +342,21 @@ test("TRIAL なしで今と同じ：status に trial が無い／/api/trial/me �
   assert.equal(a.db.all("SELECT * FROM trial_daily").length, 0);
   assert.equal((await a.getJson("/api/instant/status", headers)).body.todayAttempts, 2);
   void T0;
+});
+
+test("お試し：speed:slow はゆっくりの指示になり、不正な速さは本人の読み上げ回数を増やさない", async () => {
+  const a = makeTrialApi();
+  const u = a.as("Mika");
+  const s = await begin(u);
+  assert.equal(s.status, 200);
+  const ids = s.body.session.pendingQuestionIds as string[];
+  await u.postJson("/api/instant/finish", { sessionId: s.body.session.id, reason: "stopped" });
+  const ok = await u.postJson("/api/instant/speech", { questionId: ids[0], speed: "slow" });
+  assert.equal(ok.status, 200);
+  assert.match(JSON.stringify(a.ai.geminiCalls.at(-1)), /slightly slower than normal conversation/);
+  const used = trialToday(a.db, u.key, DAY1).speech;
+  assert.equal(used, 1);
+  const bad = await u.postJson("/api/instant/speech", { questionId: ids[0], speed: "fast" });
+  assert.equal(bad.status, 400);
+  assert.equal(trialToday(a.db, u.key, DAY1).speech, used);
 });

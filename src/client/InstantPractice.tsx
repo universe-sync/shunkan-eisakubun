@@ -5,7 +5,7 @@ import { RequestError, apiFetch, request } from "./api.js";
 import { segmentPlan, type SegmentPlan } from "./lib/segment-plan.js";
 import { keyWarning, resetConfirm } from "./strings.js";
 import { FINISH_WAIT_HINT_MS, canSkip, correctionToShow, countResults, currentQuestion, initialRun, isMeaningOkBelowPass, isSettled, isTimeUp, mergeResults, nextKeyAction, pendingCount, remainingMs, remainingWholeSeconds, runReducer, type AudioSummary, type Outcome, type RecordedAttempt, type RunEvent, type RunQuestion, type RunState } from "./lib/instant-run.js";
-import { PASS_SCORE, QUESTION_COUNT_DEFAULT, QUESTION_COUNT_OPTIONS, QUESTION_SECONDS_DEFAULT, QUESTION_SECONDS_MAX, QUESTION_SECONDS_MIN, QUESTION_SECONDS_PRESETS, parseQuestionCount, parseQuestionSeconds, questionDurationMs, questionSecondsLabel, stepQuestionSeconds, type QuestionSeconds } from "../shared/instant-rules.js";
+import { PASS_SCORE, QUESTION_COUNT_DEFAULT, QUESTION_COUNT_OPTIONS, QUESTION_SECONDS_DEFAULT, QUESTION_SECONDS_MAX, QUESTION_SECONDS_MIN, QUESTION_SECONDS_PRESETS, parseQuestionCount, parseQuestionSeconds, questionDurationMs, questionSecondsLabel, stepQuestionSeconds, SPEECH_SPEED_DEFAULT, parseSpeechSpeed, type QuestionSeconds, type SpeechSpeed } from "../shared/instant-rules.js";
 import { TRIAL_SESSION_SIZE } from "../shared/trial-rules.js";
 import { idleMessage, refreshApplies, sessionProgressed, shouldRefresh, type RefreshMarks } from "./lib/refresh-policy.js";
 import { createSpeechCache, speechKey } from "./lib/speech-cache.js";
@@ -51,6 +51,9 @@ const isActive = (phase: RunState["phase"]) => phase === "mic" || phase === "run
 const STOP_TEXT = "停止しました。送った答えの採点がそろったら、答え合わせを表示します。";
 const PROGRESSED_TEXT = "別の端末でこの出題が進みました。画面を最新にしました。スタートを押すと、残りがあれば続きから、終わっていれば新しい出題を始めます。";
 const SPEECH_USED_UP_TEXT = "今日の読み上げは使い切りました。一度聞いた文はこのページの間は再生できます。";
+const SPEECH_SPEED_KEY = "speak25.speechSpeed";
+const SPEECH_SPEED_LABEL: Record<SpeechSpeed, string> = { normal: "普通", slow: "ゆっくり" };
+const readSpeechSpeed = (): SpeechSpeed => { try { return parseSpeechSpeed(localStorage.getItem(SPEECH_SPEED_KEY)) ?? SPEECH_SPEED_DEFAULT; } catch { return SPEECH_SPEED_DEFAULT; } };
 const PAUSE_TEXT = "一時停止中です。録音と時間を止めています。「再開」で同じ問題の続きから始めます。";
 
 export default function InstantPractice({ onActiveChange, onMode, onTrial }: { onActiveChange?: (active: boolean) => void; onMode?: (mode: "solo" | "trial" | "trial-name") => void; onTrial?: (trial: TrialInfo | null) => void }) {
@@ -69,6 +72,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   const speechCache = useRef(createSpeechCache()); // 読み上げの音声を、このページの間だけ覚える（同じ文は API を呼ばない）
   const historySection = useRef<HTMLElement | null>(null); // 履歴は答え合わせの下に開くので、開いたらここまでスクロールする
   const [busy, setBusy] = useState(false);
+  const [speechSpeed, setSpeechSpeed] = useState<SpeechSpeed>(readSpeechSpeed); // 読み上げの速さ。端末ごとに localStorage で覚える（サーバーの表には持たない）
   const [playing, setPlaying] = useState<string | null>(null);
   const [playNote, setPlayNote] = useState<{ key: string; text: string } | null>(null); // 読み上げが断られたときの文を、押したボタンの横に出す
   const [resuming, setResuming] = useState(false); const resumingRef = useRef(false); // 再開の前に status を確かめている間
@@ -84,6 +88,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   const audioUrl = useRef<string | null>(null);
   const mounted = useRef(true);
   const resetVersion = useRef(0);
+  const speechSeq = useRef(0); // 読み上げの速さを切り替えるたびに1増やす。古い速さの要求の結果はこれで捨てる（state でなく ref を読む）
   const [questionSeconds, setQuestionSeconds] = useState<QuestionSeconds>(QUESTION_SECONDS_DEFAULT);
   const [questionCount, setQuestionCount] = useState<number>(QUESTION_COUNT_DEFAULT);
   const [settingsReady, setSettingsReady] = useState(false); // 読み込みが終わる（失敗を含む）までは欄を出さず、スタートも押せない
@@ -410,6 +415,8 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       const value = await request<Summary & { session: Session | null; resumed?: boolean }>("/api/instant/start", { generationId: summary?.generationId, questionSeconds: limit, questionCount: count });
       if (stale()) { media.getTracks().forEach((track) => track.stop()); return; }
       setSummary((previous) => (keepKeyFlags(value, previous)));
+      const startInfo = parseTrialInfo((value as { trial?: unknown }).trial);
+      if (startInfo) applyTrial(startInfo);
       session = value.session;
       resumed = value.resumed === true;
     } catch (error) {
@@ -562,22 +569,31 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
     try { const value = await request<History>("/api/instant/history"); if (version === resetVersion.current) { setHistory(value); setShowHistory(true); } }
     catch (error) { if (version === resetVersion.current) setMessage(userMessage(error, "履歴を読み込めませんでした。")); }
   };
+  const chooseSpeechSpeed = (speed: SpeechSpeed) => {
+    if (speed === speechSpeed) return; // 同じ速さなら何もしない（鳴っている音声も止めない）
+    speechSeq.current += 1;
+    setSpeechSpeed(speed);
+    try { localStorage.setItem(SPEECH_SPEED_KEY, speed); } catch { /* 保存できなくても、この画面の間は選んだ速さで話す */ }
+    stopSpeech(); setPlayNote(null); // 再生中に切り替えても、表示が前の速さのままにならない
+  };
   const play = async (questionId: string, attemptId?: string) => {
     if (isActive(runRef.current.phase)) return; // 実行中は読み上げを使わない（マイクに入るため）
-    const key = speechKey(questionId, attemptId);
-    const version = resetVersion.current; const playRun = runId.current;
+    const speed = speechSpeed; // ボタンは描画ごとに作り直すので、押した時点の速さ
+    const key = speechKey(questionId, attemptId, speed);
+    const version = resetVersion.current; const playRun = runId.current; const seq = speechSeq.current;
     setPlaying(key); setPlayNote(null);
     let called = false; // 本当に API を呼んだときだけ、利用料の帯とお試しの残りを読み直す
     try {
       let blob = speechCache.current.get(key); // 一度聞いた文は、API を呼ばずに鳴らす
       if (!blob) {
         called = true;
-        const response = await apiFetch("/api/instant/speech", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ questionId, attemptId }) });
+        const response = await apiFetch("/api/instant/speech", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ questionId, attemptId, speed }) });
         if (!response.ok) { const value = await response.json().catch(() => ({})); throw new RequestError(value.error || "再生できませんでした。", response.status, typeof value.reason === "string" ? value.reason : undefined); }
         blob = await response.blob();
         if (version !== resetVersion.current) return;
         speechCache.current.set(key, blob);
       }
+      if (seq !== speechSeq.current) return; // 待っている間に速さを切り替えた（表示は切り替え側が直している）
       // 生成している間に実行が始まったなら、録音に入らないよう再生しない
       if (isActive(runRef.current.phase)) { setPlaying(null); return; }
       const url = URL.createObjectURL(blob);
@@ -588,12 +604,12 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       player.onended = () => { if (audioUrl.current === url) { URL.revokeObjectURL(url); audioUrl.current = null; } setPlaying(null); };
       player.onerror = () => { if (audioUrl.current === url) { URL.revokeObjectURL(url); audioUrl.current = null; } setPlaying(null); setMessage("音声を再生できませんでした。"); };
       await player.play();
-    } catch (error) { if (version === resetVersion.current) { setPlaying(null); if (playRun === runId.current && !isActive(runRef.current.phase)) { const text = userMessage(error, "音声を再生できませんでした。"); setMessage(text); setPlayNote({ key, text }); } } }
+    } catch (error) { if (version === resetVersion.current && seq === speechSeq.current) { setPlaying(null); if (playRun === runId.current && !isActive(runRef.current.phase)) { const text = userMessage(error, "音声を再生できませんでした。"); setMessage(text); setPlayNote({ key, text }); } } }
     finally { if (called) { notifyUsageChanged(); void refreshTrial(); } }
   };
 
   const playButton = (questionId: string, attemptId?: string) => {
-    const key = speechKey(questionId, attemptId);
+    const key = speechKey(questionId, attemptId, speechSpeed);
     return <><button className="quiet" disabled={Boolean(playing) || active} onClick={() => void play(questionId, attemptId)}>{playing === key ? "生成・再生中" : "▶ 再生"}</button>{playNote?.key === key && <span className="note play-note" role="status"> {playNote.text}</span>}</>;
   };
   const speechUsedUp = Boolean(trial) && trialSpeechRemaining(trial!) === 0;
@@ -615,10 +631,10 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
   // 説明は1文ずつの箇条書きにする（読みやすさのため。2026-10-21 利用者の依頼）
   const introLines = [
     trial
-      ? "スタート前に「練習の設定」で、1問の時間を10〜30秒から選べます（お試しは1回10問です）。"
+      ? "お試しは1回10問に固定されています。"
       : "スタート前に「練習の設定」で、1問の時間を10〜30秒、1回の問題数を10・20・30・50問から選べます。",
     "スタートすると録音が始まり、設定した時間がたつと自動で次の問題へ進みます。",
-    "答え終わったら Tab キー（または「次へ」）で、設定した時間を待たずに次へ進めます。",
+    "答え終わったら「次へ」（PC では Tab キー）で、設定した時間を待たずに次へ進めます。",
   ];
   const timeNote = `${questionSeconds}秒たつと自動で次の問題へ進みます。`;
   const pendingOfActive = summary?.activeSession?.pendingQuestionIds.length ?? 0;
@@ -638,7 +654,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       {summary?.providerBlock && <p className="instant-warning" role="status">{summary.providerBlock.message}（しばらくは呼び出しを止めています。）</p>}
       {!settingsReady ? <p className="note">{trial ? "1問の時間を読み込んでいます。" : "1問の時間と問題数を読み込んでいます。"}</p>
        : active ? <p className="setup-current">1問の時間：<strong>{questionSecondsLabel(questionSeconds)}</strong>（{trial ? "1問の時間" : "1問の時間と問題数"}は、出題中は変えられません）</p>
-       : <details className="setup-panel"><summary><span className="setup-summary-label">練習の設定</span><span>1問の時間 <strong>{questionSecondsLabel(questionSeconds)}</strong> ・ 1回 <strong>{trial ? TRIAL_SESSION_SIZE : questionCount}問</strong></span><span className="setup-summary-action" aria-hidden="true"></span></summary><div className="instant-setup">
+       : <details className="setup-panel"><summary><span className="setup-summary-label">練習の設定</span><span><span className="setup-summary-item">1問の時間 <strong>{questionSecondsLabel(questionSeconds)}</strong> ・</span> <span className="setup-summary-item">1回 <strong>{trial ? TRIAL_SESSION_SIZE : questionCount}問</strong> ・</span> <span className="setup-summary-item">読み上げ <strong>{SPEECH_SPEED_LABEL[speechSpeed]}</strong></span></span><span className="setup-summary-action" aria-hidden="true"></span></summary><div className="instant-setup">
           <fieldset className="setup-box"><legend>1問の時間</legend>
             <div className="time-dial">
               <button type="button" className="time-step" tabIndex={-1} aria-label="1秒短くする" aria-controls="time-value" disabled={!canShorter} onClick={() => chooseQuestionSeconds(stepQuestionSeconds(questionSeconds, -1))}>−</button>
@@ -657,6 +673,12 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
               {QUESTION_COUNT_OPTIONS.map((n) => <button type="button" key={n} className="quiet setup-choice" aria-pressed={questionCount === n} onClick={() => chooseQuestionCount(n)}>{n}問</button>)}
             </div>}
             {!trial && <p className="note">{countNote}</p>}
+          </fieldset>
+          <fieldset className="setup-box"><legend>読み上げの速さ</legend>
+            <div className="setup-choices" role="group" aria-label="読み上げの速さ">
+              {(["normal", "slow"] as const).map((s) => <button type="button" key={s} className="quiet setup-choice" aria-pressed={speechSpeed === s} onClick={() => chooseSpeechSpeed(s)}>{SPEECH_SPEED_LABEL[s]}</button>)}
+            </div>
+            <p className="note">答え合わせの「▶ 再生」で聞く英語の速さです。{trial && "速さを変えて同じ文を聞き直すと、読み上げの回数を1回使います。"}</p>
           </fieldset>
         </div></details>}
       <p className="note setup-status" role="status">{settingsNoteText}</p>
@@ -681,14 +703,18 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
             <li>意味が伝わっていても、文法などで合計が{PASS_SCORE}点に届かなければ不合格になります。</li>
             <li>声は Gemini が英語の文字に書き起こし、その文字を Claude が採点します。文字だけで採点するので、発音の点数は付けません。</li>
             <li>録音はブラウザでWAVに変換して聞き取りに送り、保存しません。声が無い区間は、ブラウザで判定して送りません。</li>
-            <li>声を検出できなかった問題（Tab で進んだ問題を含む）は「回答なし」として不合格になります。</li>
+            <li>声を検出できなかった問題（「次へ」で進んだ問題を含む）は「回答なし」として不合格になります。</li>
             <li>聞き取りや採点が失敗した問題は、記録を変えません。</li>
           </ul>
+          {summary && !trial && <><h3>別の端末で使うとき</h3>
+          <ul className="instant-notes">
+            <li>別のブラウザや別の端末（Cloudflareに置いた場合）で開いても、合言葉を入れれば同じ記録で続けられます。</li>
+            <li>複数の端末で同時に回答することはできません。やめるときは「停止」を押すか、一時停止のままにして、もう片方で続けます。</li>
+          </ul></>}
           {trial && <><h3>お試しのきまり</h3>
           <ul className="instant-notes">
-            <li>1日{trial.questionsLimit}問まで答えられます。1回は10問で、今日の残りが10問より少ない日は残りの数だけ出ます。</li>
+            <li>1日{trial.questionsLimit}問まで答えられます。</li>
             <li>読み上げは1日{trial.speechLimit}回までです。一度再生した文は、このページを開いている間は何度でも聞けます。</li>
-            <li>数は日本時間の0時に戻ります。「記録をリセット」しても、今日の問題数と読み上げの回数は戻りません。</li>
             <li>別の端末や別のブラウザで使うときは、合言葉のあと、名前と「引き継ぎ番号」（右上のボタンで見られます）を入れると同じ記録で続けられます。2台で同時には使わないでください。</li>
             {trial.endsOn && <li>お試しは{endsOnLabel(trial.endsOn)}までです。</li>}
           </ul></>}
@@ -703,10 +729,10 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       <p className="instant-countdown">残り <strong>{remainingWholeSeconds(run.countdown, clock)}</strong> 秒</p>
       <progress max={limitSeconds * 1000} value={remainingMs(run.countdown, clock)} aria-label="残り時間" />
       {run.phase === "running"
-        ? <><button onClick={skipToNext} disabled={!canSkip(run, clock)} aria-keyshortcuts="Tab">次へ（Tab）</button><button onClick={() => pauseRun()}>一時停止</button><span className="record-live" role="status">録音中</span></>
+        ? <><button onClick={skipToNext} disabled={!canSkip(run, clock)} aria-keyshortcuts="Tab">次へ<span className="key-hint">（Tab）</span></button><button onClick={() => pauseRun()}>一時停止</button><span className="record-live" role="status">録音中</span></>
         : <><button onClick={() => void resumeRun()} disabled={resuming}>再開</button><span className="instant-paused" role="status">一時停止中</span></>}
       <button className="record-stop" onClick={() => stopRunWith(STOP_TEXT)}>停止</button>
-      <p className="note">英語で答えてください。答え終わったら Tab キーか「次へ」で次の問題へ進めます（{limitSeconds}秒たつと自動で進みます）。その問題の声を採点に送ります。答え合わせは最後にまとめて表示します。{pending ? ` 採点中 ${pending}件` : ""}</p>
+      <p className="note">英語で答えてください。答え終わったら<span className="key-hint"> Tab キーか</span>「次へ」で次の問題へ進めます（{limitSeconds}秒たつと自動で進みます）。その問題の声を採点に送ります。答え合わせは最後にまとめて表示します。{pending ? ` 採点中 ${pending}件` : ""}</p>
     </section>}
 
     {run.phase === "finishing" && <section className="instant-finishing" data-phase="finishing">

@@ -4,10 +4,11 @@ import { createSpeechCache, speechKey } from "../src/client/lib/speech-cache";
 
 const blob = (n: number) => new Blob([String(n)]);
 
-test("speechKey：模範文は reference、直した文は回答の ID", () => {
-  assert.equal(speechKey("q001"), "q001:reference");
-  assert.equal(speechKey("q001", "a1"), "q001:a1");
-  assert.equal(speechKey("q001", ""), "q001:reference");
+test("speechKey：模範文は reference、直した文は回答の ID、最後に速さ", () => {
+  assert.equal(speechKey("q001", undefined, "normal"), "q001:reference:normal");
+  assert.equal(speechKey("q001", "a1", "normal"), "q001:a1:normal");
+  assert.equal(speechKey("q001", "", "slow"), "q001:reference:slow");
+  assert.notEqual(speechKey("q001", "a1", "normal"), speechKey("q001", "a1", "slow"));
 });
 
 test("上限を超えると古いものから消え、get で新しい側へ移る", () => {

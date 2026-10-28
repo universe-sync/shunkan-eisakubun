@@ -20,6 +20,7 @@
 - ASSETS・DO の応答は `new Response(r.body, r)` で写してから返す（ヘッダーを変えられない Response を返すと例外になる）
 - テストから読む `src/server` のファイルは、標準の Web API と Hono・Anthropic SDK だけを使う。`cloudflare:workers` や `Fetcher`・`DurableObjectNamespace` の型は `worker.ts`・`env.ts`・`practice-do.ts`・`store/do-db.ts` だけ
 - `src/server` は `src/client` を import しない。両方が読むのは `src/shared` だけ
+- 読み上げの速さ（普通・ゆっくり）は端末ごとに localStorage（`speak25.speechSpeed`）で覚え、`/api/instant/speech` の `speed` で送る。サーバーの表には持たない。既定は普通
 - 外向きの fetch は許可リスト（`ai/outbound.ts`：Gemini・Anthropic だけ）で包む
 - ログに本文・書き起こし・cookie・キーを出さない（Claude と Gemini のエラーは状態と code だけ）
 - **`.dev.vars`・`.env*` を読まない・写さない。** 値は各自が `.dev.vars`（git に入れない）か Cloudflare の Secret に入れる
@@ -38,6 +39,7 @@
 
 ## お試しモード（複数人）
 - `TRIAL_MODE` が `"1"` のときだけ有効（`wrangler.trial.jsonc`）。**1人用（`TRIAL_MODE` なし）の応答・DB の中身・画面は、今までと同じに保つ**（`tests/worker-trial.test.ts`・`tests/trial-api.test.ts` が固定している）。自分の Worker に `TRIAL_MODE` を入れない
+- `/api/instant/start` の成功応答にも、お試しでは `trial` を含める
 - 記録は `user_key` で分ける。1人用は空の文字、お試しは名前の鍵（小文字・NFC）。`store.ts`・`settings.ts` は作るときに userKey を束ね、`instant_` の表を読み書きする SQL には必ず `user_key = ?` を入れる。お試しで空の文字に届く道を作らない
 - 名前の cookie は `app_user`（署名つき）。クライアントが送った `X-User-Key` は Worker が必ず捨て、検証した鍵を base64url にして付け直す。DO はそれだけを信じる
 - 名前の登録は `POST /trial/name`（重複は 409）。管理用の一覧は `POST /trial/admin/participants`（Secret `TRIAL_ADMIN_TOKEN`・32字以上。失敗はメンバーの合言葉の失敗と同じ枠で数える）と画面 `/trial/admin`

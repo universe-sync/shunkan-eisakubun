@@ -17,6 +17,10 @@ export function parseQuestionSeconds(value) {
 }
 export function parseQuestionCount(value) { return QUESTION_COUNT_OPTIONS.includes(value) ? value : undefined; }
 // 画面の残り時間の長さ（ms）
+export const SPEECH_SPEEDS = Object.freeze(["normal", "slow"]);
+export const SPEECH_SPEED_DEFAULT = "normal";
+export function parseSpeechSpeed(value) { return SPEECH_SPEEDS.includes(value) ? value : undefined; }
+
 export function questionDurationMs(value) { return value * 1000; }
 // −／＋・↑↓ の1歩。秒数は10〜30に収める
 export function stepQuestionSeconds(value, delta) {

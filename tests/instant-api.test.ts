@@ -500,6 +500,25 @@ test("本文が上限を超えると413：answer は 4,194,304 バイト、そ�
   assert.ok(pulled < 100, `読みすぎた: ${pulled}`);
 });
 
+test("読み上げの速さ：省略＝普通、slow＝ゆっくり、不正は400で回数を使わない", async () => {
+  const { a, sessionId, ids } = await startedSession();
+  await a.postJson("/api/instant/finish", { sessionId, reason: "stopped" });
+  const send = (extra: object) => a.app.request("/api/instant/speech", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ questionId: ids[0], ...extra }) });
+  assert.equal((await send({})).status, 200);
+  assert.match(JSON.stringify(a.ai.geminiCalls.at(-1)), /normal conversational pace/);
+  assert.equal((await send({ speed: "slow" })).status, 200);
+  assert.match(JSON.stringify(a.ai.geminiCalls.at(-1)), /slightly slower than normal conversation/);
+  const before = a.ai.geminiCalls.length;
+  const speechCount = () => a.db.all("SELECT count FROM daily_counters WHERE name = 'speech'")[0]?.count ?? 0;
+  const countBefore = speechCount();
+  assert.ok(Number(countBefore) > 0,"成功した2回の読み上げが数えられている（数え方が壊れて0のままなら、下の不変の確かめが意味をなさない）");
+  const bad = await send({ speed: "fast" });
+  assert.equal(bad.status, 400);
+  for (const speed of [1, null, [], "", "SLOW"]) assert.equal((await send({ speed })).status, 400, JSON.stringify(speed));
+  assert.equal(a.ai.geminiCalls.length, before);
+  assert.equal(speechCount(), countBefore);
+});
+
 test("読み上げ：模範文を WAV で返し（Uint8Array → Response）、日本語の問題文も読める。キーが無ければ503", async () => {
   const { a, sessionId, ids } = await startedSession();
   await a.postJson("/api/instant/finish", { sessionId, reason: "stopped" });

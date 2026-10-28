@@ -38,5 +38,7 @@ test("start：generationId が文字列以外でも、真なら文字にして�
   }
   // 正しい世代なら通る
   const generationId = (await a.getJson("/api/instant/status")).body.generationId;
-  assert.equal((await a.postJson("/api/instant/start", { generationId })).status, 200);
+  const ok = await a.postJson("/api/instant/start", { generationId });
+  assert.equal(ok.status, 200);
+  assert.equal("trial" in ok.body, false, "1人用の start 応答に trial は無い");
 });

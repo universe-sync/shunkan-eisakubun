@@ -105,7 +105,7 @@ test("読み上げの回数の上限（DAILY_SPEECH_LIMIT=2）：3回目は429�
   assert.equal(limited.status, 429);
   assert.equal(limited.body.reason, "daily_limit");
   assert.equal(limited.body.limit, "speech");
-  assert.equal(limited.body.error, "今日の読み上げの上限（2回）に達しました。日本時間の0時を過ぎると、また使えます。");
+  assert.equal(limited.body.error, "今日の読み上げの上限（2回）に達しました。このページで最近再生した文は、同じ速さなら聞き直せます。日本時間の0時を過ぎると、また使えます。");
   assert.equal(a.ai.geminiCalls.length, calls);
   // 見つからない読み上げ対象は数えない
   assert.equal((await a.postJson("/api/instant/speech", { questionId: "q001" })).status, 404);
