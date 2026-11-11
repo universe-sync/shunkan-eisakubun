@@ -425,7 +425,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       abort(userMessage(error, "出題を開始できませんでした。ページを再読み込みしてから、もう一度スタートしてください。"));
       return;
     }
-    if (!session) { media.getTracks().forEach((track) => track.stop()); abort("100問すべてクリアしました。もう一度練習するには記録をリセットしてください。"); return; }
+    if (!session) { media.getTracks().forEach((track) => track.stop()); abort(`${summary?.total ?? ""}問すべてクリアしました。もう一度練習するには記録をリセットしてください。`); return; }
     try {
       const pending = new Set(session.pendingQuestionIds);
       const queue = session.questions.filter((question) => pending.has(question.id));
@@ -559,7 +559,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
     if (!window.confirm(resetConfirm(Boolean(trialRef.current)))) return; // 押しただけで消えないよう、一度確かめる
     resetVersion.current += 1;
     stopSpeech(); setPlayNote(null); setBusy(true); resetting.current = true;
-    try { const value = await request<Summary>("/api/instant/reset", {}); setSummary((previous) => (keepKeyFlags(value, previous))); commit({ type: "abort" }); setResults(null); setHistory(null); setShowHistory(false); speechCache.current.clear(); setMessage(`瞬間英作文の記録をすべてリセットしました。100問からやり直せます（${trialRef.current ? "1問の時間" : "1問の時間と問題数"}の設定はそのままです）。${trialRef.current ? TRIAL.resetNote : ""}`); void refreshTrial(); }
+    try { const value = await request<Summary>("/api/instant/reset", {}); setSummary((previous) => (keepKeyFlags(value, previous))); commit({ type: "abort" }); setResults(null); setHistory(null); setShowHistory(false); speechCache.current.clear(); setMessage(`瞬間英作文の記録をすべてリセットしました。${value.total}問からやり直せます（${trialRef.current ? "1問の時間" : "1問の時間と問題数"}の設定はそのままです）。${trialRef.current ? TRIAL.resetNote : ""}`); void refreshTrial(); }
     catch (error) { setMessage(userMessage(error, "リセットできませんでした。")); }
     finally { setBusy(false); resetting.current = false; }
   };
@@ -649,7 +649,7 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
 
   return <>
     <section className="instant-overview"><div className="section-title"><div className="title-actions"><button className="quiet" onClick={() => helpDialog.current?.showModal()} disabled={active} aria-haspopup="dialog">使い方</button><button className="quiet" onClick={() => void reset()} disabled={busy || active}>記録をリセット</button></div></div>
-      <div className="instant-stats"><span>クリア <strong>{summary?.cleared ?? "–"} / 100</strong></span><span>未クリア <strong>{summary?.remaining ?? "–"}</strong></span><span>回答記録 <strong>{summary?.attempts ?? "–"} 件</strong></span>{trial ? <span>今日の回答 <strong>{TRIAL.todayAnswers(trial.questionsUsed, trial.questionsLimit)}</strong></span> : typeof summary?.todayAttempts === "number" && <span>今日の回答 <strong>{summary.todayAttempts} 件</strong></span>}{summary && summary.todayAverage !== undefined && <span>今日の平均 <strong>{scoreText(summary.todayAverage)}</strong></span>}{summary && summary.averageScore !== undefined && <span>全体の平均 <strong>{scoreText(summary.averageScore)}</strong></span>}</div>
+      <div className="instant-stats"><span>クリア <strong>{summary?.cleared ?? "–"} / {summary?.total ?? "–"}</strong></span><span>未クリア <strong>{summary?.remaining ?? "–"}</strong></span><span>回答記録 <strong>{summary?.attempts ?? "–"} 件</strong></span>{trial ? <span>今日の回答 <strong>{TRIAL.todayAnswers(trial.questionsUsed, trial.questionsLimit)}</strong></span> : typeof summary?.todayAttempts === "number" && <span>今日の回答 <strong>{summary.todayAttempts} 件</strong></span>}{summary && summary.todayAverage !== undefined && <span>今日の平均 <strong>{scoreText(summary.todayAverage)}</strong></span>}{summary && summary.averageScore !== undefined && <span>全体の平均 <strong>{scoreText(summary.averageScore)}</strong></span>}</div>
       {missingKeys.length > 0 && <p className="instant-warning">{keyWarning(missingKeys)}</p>}
       {summary?.providerBlock && <p className="instant-warning" role="status">{summary.providerBlock.message}（しばらくは呼び出しを止めています。）</p>}
       {!settingsReady ? <p className="note">{trial ? "1問の時間を読み込んでいます。" : "1問の時間と問題数を読み込んでいます。"}</p>
@@ -775,6 +775,6 @@ export default function InstantPractice({ onActiveChange, onMode, onTrial }: { o
       })}</ol>
     </section>}
 
-    {showHistory && history && <section className="instant-history" ref={historySection}><h2>問題ごとの回答履歴</h2><p className="note">全100問の連続合格数と、これまでの回答を確認できます。</p><div className="instant-history-list">{history.progress.map(({ question: q, consecutivePasses, clearedAt, attempts }) => <details key={q.id}><summary>{q.id} · {q.japanese}　{clearedAt ? "クリア" : `連続 ${consecutivePasses} / 3`}　回答 {attempts.length}件</summary>{attempts.length ? <ol>{attempts.map((attempt) => { const fix = correctionToShow(attempt, attempt.referenceAnswer); return <li key={attempt.id}><time>{new Date(attempt.createdAt).toLocaleString("ja-JP")}</time> · {attempt.passed ? "合格" : "不合格"} · {attempt.score}点<br/>回答：{attempt.outcome === "no_answer" ? "（回答なし）" : <span lang="en">{attempt.transcript}</span>}<br/>模範文：<span lang="en">{attempt.referenceAnswer}</span>{attempt.outcome === "no_answer" ? null : <><br/>改善：{attempt.grammarFeedbackJa || "大きな修正はありません。"}{fix && <><br/>直すと：<span lang="en">{fix}</span></>}</>}</li>; })}</ol> : <p>まだ回答していません。</p>}</details>)}</div></section>}
+    {showHistory && history && <section className="instant-history" ref={historySection}><h2>問題ごとの回答履歴</h2><p className="note">全{history.summary.total}問の連続合格数と、これまでの回答を確認できます。</p><div className="instant-history-list">{history.progress.map(({ question: q, consecutivePasses, clearedAt, attempts }) => <details key={q.id}><summary>{q.id} · {q.japanese}　{clearedAt ? "クリア" : `連続 ${consecutivePasses} / 3`}　回答 {attempts.length}件</summary>{attempts.length ? <ol>{attempts.map((attempt) => { const fix = correctionToShow(attempt, attempt.referenceAnswer); return <li key={attempt.id}><time>{new Date(attempt.createdAt).toLocaleString("ja-JP")}</time> · {attempt.passed ? "合格" : "不合格"} · {attempt.score}点<br/>回答：{attempt.outcome === "no_answer" ? "（回答なし）" : <span lang="en">{attempt.transcript}</span>}<br/>模範文：<span lang="en">{attempt.referenceAnswer}</span>{attempt.outcome === "no_answer" ? null : <><br/>改善：{attempt.grammarFeedbackJa || "大きな修正はありません。"}{fix && <><br/>直すと：<span lang="en">{fix}</span></>}</>}</li>; })}</ol> : <p>まだ回答していません。</p>}</details>)}</div></section>}
   </>;
 }

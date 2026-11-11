@@ -18,11 +18,13 @@ function fixture(existing?: ReturnType<typeof migratedDb>) {
   return { db, clock, store: createInstantStore({ db, now: () => clock.t, newId: () => crypto.randomUUID(), randomInt: cryptoRandomInt, userKey: "" }) };
 }
 
-test("教材は分野ごと10問で計100問、IDに重複がない", () => {
-  assert.equal(instantQuestions.length, 100);
-  assert.equal(new Set(instantQuestions.map((q) => q.id)).size, 100);
-  assert.deepEqual([...new Set(instantQuestions.map((q) => q.category))].map((category) => instantQuestions.filter((q) => q.category === category).length), Array(10).fill(10));
+test("教材は分野ごと10問で計300問、IDに重複がない", () => {
+  assert.equal(instantQuestions.length, 300);
+  assert.equal(new Set(instantQuestions.map((q) => q.id)).size, 300);
+  assert.deepEqual([...new Set(instantQuestions.map((q) => q.category))].map((category) => instantQuestions.filter((q) => q.category === category).length), Array(30).fill(10));
   assert.ok(instantQuestions.every((q) => q.japanese && q.referenceAnswer && q.meaningRequirements));
+  assert.equal(new Set(instantQuestions.map((q) => q.japanese)).size, 300, "日本語の問題文に重複がない");
+  assert.equal(new Set(instantQuestions.map((q) => q.referenceAnswer)).size, 300, "模範文に重複がない");
 });
 
 test("開始時は未クリアから重複しない10問を選び、進行中は同じ問題へ戻る", async () => {
@@ -61,11 +63,11 @@ test("3連続合格でクリア、不合格で連続記録が0に戻る", async 
 
 test("クリア済みを出題から外し、残り9問なら9問にする", async () => {
   const { db, store } = fixture();
-  const progress = Object.fromEntries(instantQuestions.slice(0, 91).map((q) => [q.id, { consecutivePasses: 3, clearedAt: "2026-10-19T00:00:00.000Z" }]));
+  const progress = Object.fromEntries(instantQuestions.slice(0, instantQuestions.length - 9).map((q) => [q.id, { consecutivePasses: 3, clearedAt: "2026-10-19T00:00:00.000Z" }]));
   importState(db, { schemaVersion: 1, generationId: "gen-1", sessions: [], attempts: [], progress }, NOW);
   const started = await store.start();
   assert.equal(started.session.total, 9);
-  assert.ok(started.session.questions.every((question) => instantQuestions.slice(91).some((q) => q.id === question.id)));
+  assert.ok(started.session.questions.every((question) => instantQuestions.slice(instantQuestions.length - 9).some((q) => q.id === question.id)));
 });
 
 test("リセット前の採点は書き戻せず、回答履歴は消える", async () => {
@@ -239,7 +241,7 @@ test("問題数 10・20・30・50 で、その数だけ重複なく出題の中�
 
 test("未クリアが少なければ残り全部、全部クリア済みなら session は null", async () => {
   const { db, store } = fixture();
-  const progress = Object.fromEntries(instantQuestions.slice(0, 93).map((q) => [q.id, { consecutivePasses: 3, clearedAt: "2026-10-19T00:00:00.000Z" }]));
+  const progress = Object.fromEntries(instantQuestions.slice(0, instantQuestions.length - 7).map((q) => [q.id, { consecutivePasses: 3, clearedAt: "2026-10-19T00:00:00.000Z" }]));
   importState(db, { schemaVersion: 1, generationId: "gen-1", sessions: [], attempts: [], progress }, NOW);
   const started = await store.start(undefined, { questionCount: 20 });
   assert.equal(started.session.total, 7);
